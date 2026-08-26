@@ -19,18 +19,19 @@ services:
         sync: false
       - key: RTDETR_WEIGHTS_PATH
         sync: false
-      - key: ARTIFACT_DIR
-        value: /app/data/artifacts
-      - key: DATABASE_PATH
-        value: /app/data/visionshield.db
       - key: CORS_ORIGINS
         sync: false
+      - key: ARTIFACT_DIR
+        value: /tmp/visionshield-artifacts
+      - key: DATABASE_PATH
+        value: /tmp/visionshield.db
 
   - type: web
     name: visionshield-frontend
-    runtime: docker
+    runtime: static
     rootDir: frontend
-    dockerfilePath: ./Dockerfile
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
     plan: free
     envVars:
       - key: VITE_API_URL
