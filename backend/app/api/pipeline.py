@@ -13,12 +13,14 @@ from app.services.image_utils import image_to_data_url
 from app.services.nafnet_service import NAFNetService
 from app.services.rtdetr_service import RTDETRService
 from app.services.storage import storage
+from app.services.weather_classifier import classify_weather, weather_label
 
 router = APIRouter(tags=["Pipeline"])
 nafnet_service = NAFNetService()
 rtdetr_service = RTDETRService()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 25_000_000
+VALID_WEATHER = {"auto", "fog_its", "fog_ots", "rain", "snow", "low_light"}
 
 
 def _annotate(image: Image.Image, detections: list[dict[str, Any]]) -> Image.Image:
@@ -57,9 +59,12 @@ def model_health() -> dict[str, Any]:
     }
 
 
-def _require_models(enable_enhancement: bool) -> None:
-    if enable_enhancement and not nafnet_service.loaded:
-        raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": nafnet_service.load_error or "NAFNet is unavailable.", "model": "NAFNet"})
+def _require_models(enable_enhancement: bool, weather: str) -> None:
+    if enable_enhancement:
+        nafnet_service.load_model(weather)
+        condition = nafnet_service.status().get("conditions", {}).get(weather, {})
+        if not condition.get("loaded"):
+            raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": condition.get("error") or "NAFNet is unavailable.", "model": "NAFNet", "weather": weather})
     if not rtdetr_service.loaded:
         raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": rtdetr_service.load_error or "RT-DETR is unavailable.", "model": "RT-DETR"})
 
@@ -69,9 +74,13 @@ async def process_image(
     file: UploadFile = File(...),
     enable_enhancement: bool = Query(True),
     confidence: float | None = Query(None, ge=0.05, le=0.99),
+    weather: str = Query("auto"),
 ):
-    """Run real NAFNet -> RT-DETR inference and persist generated artifacts."""
-    _require_models(enable_enhancement)
+    """Run weather routing -> condition-specific NAFNet -> RT-DETR inference."""
+    weather = weather.lower().strip()
+    if weather not in VALID_WEATHER:
+        raise HTTPException(status_code=400, detail=f"Unsupported weather route. Choose one of: {', '.join(sorted(VALID_WEATHER))}.")
+
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded image is empty.")
@@ -79,12 +88,21 @@ async def process_image(
         raise HTTPException(status_code=413, detail="Image exceeds the 20 MB upload limit.")
     image = _validate_image(file, contents)
 
+    detected_weather = weather
+    weather_features: dict[str, float] | None = None
+    if enable_enhancement and weather == "auto":
+        detected_weather, weather_features = classify_weather(image)
+    elif weather == "auto":
+        detected_weather, weather_features = classify_weather(image)
+
+    _require_models(enable_enhancement, detected_weather)
+
     run_id = f"inf_{uuid.uuid4().hex[:12]}"
     original_artifact = storage.save_artifact(contents, run_id, "original", file.filename, file.content_type)
     pipeline_start = time.perf_counter()
 
     enhancement_start = time.perf_counter()
-    processed = nafnet_service.enhance_image(image) if enable_enhancement else image.copy()
+    processed = nafnet_service.enhance_image(image, detected_weather) if enable_enhancement else image.copy()
     enhancement_ms = round((time.perf_counter() - enhancement_start) * 1000, 2)
 
     detection_start = time.perf_counter()
@@ -108,12 +126,16 @@ async def process_image(
         "media_type": "image",
         "filename": file.filename or "image",
         "nafnet_enabled": enable_enhancement,
+        "weather_route": detected_weather,
+        "weather_label": weather_label(detected_weather),
+        "weather_source": "rule-based-auto" if weather == "auto" else "operator-selected",
+        "weather_features": weather_features,
         "confidence_threshold": confidence if confidence is not None else rtdetr_service.conf_threshold,
         "detections": len(detections),
         "latency_ms": total_ms,
         "fps": fps,
         "model_status": "ready",
-        "model_config": f"NAFNet={'on' if enable_enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}",
+        "model_config": f"NAFNet={weather_label(detected_weather)} {'on' if enable_enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}",
         "artifacts": {"original": original_artifact, "enhanced": enhanced_artifact if enable_enhancement else None, "annotated": annotated_artifact},
         "details": {"image_size": {"width": image.width, "height": image.height}, "enhancement_latency_ms": enhancement_ms, "detection_latency_ms": detection_ms, "detections_detail": detections, "models": models},
     }
@@ -126,6 +148,7 @@ async def process_image(
         "filename": record["filename"],
         "image_size": {"width": image.width, "height": image.height},
         "enhancement_enabled": enable_enhancement,
+        "weather": {"requested": weather, "selected": detected_weather, "label": weather_label(detected_weather), "source": record["weather_source"], "features": weather_features},
         "models": models,
         "metrics": {"enhancement_latency_ms": enhancement_ms, "detection_latency_ms": detection_ms, "total_latency_ms": total_ms, "fps_equivalent": fps},
         "detections_count": len(detections),
@@ -145,6 +168,7 @@ def health():
         "status": "operational" if ready else "degraded",
         "api_status": "connected",
         "models": models,
+        "weather_routes": [{"id": key, "label": weather_label(key)} for key in sorted(VALID_WEATHER) if key != "auto"],
         "artifact_store": {"status": "ready", "provider": "replaceable-local"},
         "total_inferences": storage.inference_count(),
     }
