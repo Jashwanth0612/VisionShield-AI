@@ -8,12 +8,30 @@ from PIL import Image
 
 from app.api.pipeline import nafnet_service, rtdetr_service
 from app.services.storage import storage
+from app.services.weather_classifier import classify_weather, weather_label
 
 
-def benchmark_image(image: Image.Image, filename: str, runs: int = 3, enhancement: bool = True, confidence: float | None = None) -> dict[str, Any]:
-    """Measure end-to-end image inference and persist one explicit benchmark action."""
-    if enhancement and not nafnet_service.loaded:
-        raise RuntimeError(nafnet_service.load_error or "NAFNet is unavailable.")
+def benchmark_image(
+    image: Image.Image,
+    filename: str,
+    runs: int = 3,
+    enhancement: bool = True,
+    confidence: float | None = None,
+    weather: str = "auto",
+) -> dict[str, Any]:
+    """Measure end-to-end weather-routed NAFNet -> RT-DETR image inference."""
+    if weather == "auto":
+        selected_weather, weather_features = classify_weather(image)
+        weather_source = "rule-based-auto"
+    else:
+        selected_weather, weather_features = weather, None
+        weather_source = "operator-selected"
+
+    if enhancement:
+        nafnet_service.load_model(selected_weather)
+        condition = nafnet_service.status().get("conditions", {}).get(selected_weather, {})
+        if not condition.get("loaded"):
+            raise RuntimeError(condition.get("error") or "NAFNet is unavailable.")
     if not rtdetr_service.loaded:
         raise RuntimeError(rtdetr_service.load_error or "RT-DETR is unavailable.")
 
@@ -22,7 +40,7 @@ def benchmark_image(image: Image.Image, filename: str, runs: int = 3, enhancemen
     detection_counts: list[int] = []
     for _ in range(runs):
         start = time.perf_counter()
-        processed = nafnet_service.enhance_image(image) if enhancement else image.copy()
+        processed = nafnet_service.enhance_image(image, selected_weather) if enhancement else image.copy()
         detections = rtdetr_service.detect(processed, confidence_threshold=confidence)
         latencies.append((time.perf_counter() - start) * 1000)
         detection_counts.append(len(detections))
@@ -30,13 +48,17 @@ def benchmark_image(image: Image.Image, filename: str, runs: int = 3, enhancemen
     avg_ms = sum(latencies) / len(latencies)
     run_id = f"bench_{uuid.uuid4().hex[:12]}"
     timestamp = storage.now()
-    model_config = f"NAFNet={'on' if enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}"
+    model_config = f"NAFNet={weather_label(selected_weather)} {'on' if enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}"
     record = {
         "run_id": run_id,
         "timestamp": timestamp,
         "media_type": "image",
         "filename": filename or "benchmark-image",
         "iterations": runs,
+        "weather_route": selected_weather,
+        "weather_label": weather_label(selected_weather),
+        "weather_source": weather_source,
+        "weather_features": weather_features,
         "latency_ms": round(avg_ms, 2),
         "min_latency_ms": round(min(latencies), 2),
         "max_latency_ms": round(max(latencies), 2),
