@@ -24,12 +24,11 @@ class LayerNormFunction(torch.autograd.Function):
 
     @staticmethod
     def backward(ctx, grad_output):
-        eps = ctx.eps
         y, var, weight = ctx.saved_tensors
         g = grad_output * weight.view(1, -1, 1, 1)
         mean_g = g.mean(dim=1, keepdim=True)
         mean_gy = (g * y).mean(dim=1, keepdim=True)
-        gx = (g - y * mean_gy - mean_g) / torch.sqrt(var + eps)
+        gx = (g - y * mean_gy - mean_g) / torch.sqrt(var + ctx.eps)
         return gx, (grad_output * y).sum(dim=(0, 2, 3)), grad_output.sum(dim=(0, 2, 3)), None
 
 
@@ -86,7 +85,7 @@ class NAFBlock(nn.Module):
 
 
 class NAFNet(nn.Module):
-    def __init__(self, img_channel=3, width=32, middle_blk_num=1, enc_blk_nums=None, dec_blk_nums=None):
+    def __init__(self, img_channel=3, width=64, middle_blk_num=1, enc_blk_nums=None, dec_blk_nums=None):
         super().__init__()
         enc_blk_nums = enc_blk_nums or [1, 1, 1, 28]
         dec_blk_nums = dec_blk_nums or [1, 1, 1, 1]
@@ -94,16 +93,23 @@ class NAFNet(nn.Module):
         self.ending = nn.Conv2d(width, img_channel, 3, 1, 1, bias=True)
         self.encoders = nn.ModuleList()
         self.decoders = nn.ModuleList()
-        self.middle_blks = nn.Sequential(*[NAFBlock(width * 2 ** len(enc_blk_nums),) for _ in range(middle_blk_num)])
-        self.ups = nn.ModuleList()
+        chan = width
+        for num in enc_blk_nums:
+            self.encoders.append(nn.Sequential(*[NAFBlock(chan) for _ in range(num)]))
+            self.encoders[-1].add_module("down", nn.Identity())
+            chan *= 2
+        # Build the encoder/decoder explicitly so checkpoint keys remain stable.
+        self.encoders = nn.ModuleList()
         self.downs = nn.ModuleList()
-
         chan = width
         for num in enc_blk_nums:
             self.encoders.append(nn.Sequential(*[NAFBlock(chan) for _ in range(num)]))
             self.downs.append(nn.Conv2d(chan, chan * 2, 2, 2))
             chan *= 2
 
+        self.middle_blks = nn.Sequential(*[NAFBlock(chan) for _ in range(middle_blk_num)])
+        self.ups = nn.ModuleList()
+        self.decoders = nn.ModuleList()
         for num in dec_blk_nums:
             self.ups.append(nn.Sequential(nn.Conv2d(chan, chan * 2, 1, bias=False), nn.PixelShuffle(2)))
             chan //= 2
@@ -130,71 +136,100 @@ class NAFNet(nn.Module):
             x = up(x)
             x = x + enc_skip
             x = decoder(x)
-        x = self.ending(x)
-        x = x + padded
-        return x[:, :, :h, :w]
+        return (self.ending(x) + padded)[:, :, :h, :w]
+
+
+WEATHER_LABELS = {
+    "fog_its": "Fog · ITS",
+    "fog_ots": "Fog · OTS",
+    "rain": "Rain",
+    "snow": "Snow",
+    "low_light": "Low-Light",
+}
 
 
 class NAFNetService:
-    """Real NAFNet inference service. Missing or incompatible weights fail closed."""
+    """Condition-specific NAFNet inference with lazy checkpoint loading."""
 
-    def __init__(self, model_path: str | None = None, device: str | None = None):
+    def __init__(self, device: str | None = None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
-        self.model_path = Path(model_path or settings.nafnet_weights_path).expanduser() if (model_path or settings.nafnet_weights_path) else None
-        self.model: Any = None
-        self.loaded = False
-        self.load_error: str | None = None
+        self.model_paths: dict[str, Path] = settings.nafnet_paths
+        self.models: dict[str, nn.Module] = {}
+        self.load_errors: dict[str, str] = {}
         self.transform = transforms.ToTensor()
 
-    def load_model(self) -> None:
-        self.model = None
-        self.loaded = False
-        self.load_error = None
-        if self.model_path is None:
-            self.load_error = "NAFNet weights are not configured. Set NAFNET_WEIGHTS_PATH."
+    def _build_model(self) -> NAFNet:
+        return NAFNet(
+            width=settings.nafnet_width,
+            middle_blk_num=settings.nafnet_middle_blocks,
+            enc_blk_nums=settings.encoder_blocks,
+            dec_blk_nums=settings.decoder_blocks,
+        )
+
+    def _load_checkpoint(self, weather: str) -> None:
+        if weather in self.models or weather in self.load_errors:
             return
-        if not self.model_path.is_file():
-            self.load_error = "Configured NAFNet weight file was not found."
+        path = self.model_paths.get(weather)
+        if path is None:
+            self.load_errors[weather] = f"No NAFNet checkpoint configured for {WEATHER_LABELS.get(weather, weather)}."
+            return
+        if not path.is_file():
+            self.load_errors[weather] = f"NAFNet checkpoint was not found: {path}"
             return
         try:
-            checkpoint = torch.load(str(self.model_path), map_location="cpu", weights_only=False)
+            checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
             if isinstance(checkpoint, nn.Module):
                 model = checkpoint
             else:
                 state = checkpoint.get("params") or checkpoint.get("state_dict") or checkpoint.get("model") if isinstance(checkpoint, dict) else checkpoint
-                model = NAFNet(
-                    width=settings.nafnet_width,
-                    middle_blk_num=settings.nafnet_middle_blocks,
-                    enc_blk_nums=settings.encoder_blocks,
-                    dec_blk_nums=settings.decoder_blocks,
-                )
                 if not isinstance(state, dict):
-                    raise ValueError("NAFNet checkpoint does not contain a PyTorch state_dict.")
+                    raise ValueError("Checkpoint does not contain a PyTorch state_dict.")
+                model = self._build_model()
                 state = {key.replace("module.", "", 1): value for key, value in state.items()}
                 model.load_state_dict(state, strict=True)
-            self.model = model.to(self.device).eval()
-            self.loaded = True
+            self.models[weather] = model.to(self.device).eval()
         except Exception as exc:
-            self.model = None
-            self.load_error = f"Unable to load NAFNet checkpoint: {exc}"
+            self.load_errors[weather] = f"Unable to load checkpoint: {exc}"
+
+    def load_model(self, weather: str = "fog_its") -> None:
+        self._load_checkpoint(weather)
+
+    @property
+    def loaded(self) -> bool:
+        return bool(self.models)
+
+    @property
+    def load_error(self) -> str | None:
+        return next(iter(self.load_errors.values()), None)
 
     @torch.inference_mode()
-    def enhance_image(self, image: Image.Image) -> Image.Image:
-        if not self.loaded or self.model is None:
-            raise RuntimeError(self.load_error or "NAFNet model is unavailable.")
+    def enhance_image(self, image: Image.Image, weather: str = "fog_its") -> Image.Image:
+        self._load_checkpoint(weather)
+        model = self.models.get(weather)
+        if model is None:
+            raise RuntimeError(self.load_errors.get(weather) or "NAFNet model is unavailable.")
         tensor = self.transform(image).unsqueeze(0).to(self.device)
-        output = self.model(tensor)
+        output = model(tensor)
         if isinstance(output, (tuple, list)):
             output = output[0]
         output = output.squeeze(0).detach().cpu().clamp(0, 1)
         return transforms.ToPILImage()(output)
 
     def status(self) -> dict[str, Any]:
+        conditions = {}
+        for weather, path in self.model_paths.items():
+            conditions[weather] = {
+                "label": WEATHER_LABELS.get(weather, weather),
+                "configured": bool(path),
+                "checkpoint": path.name if path else None,
+                "checkpoint_exists": bool(path and path.is_file()),
+                "loaded": weather in self.models,
+                "error": self.load_errors.get(weather),
+            }
         return {
             "loaded": self.loaded,
-            "configured": bool(self.model_path),
-            "checkpoint": self.model_path.name if self.model_path else None,
-            "checkpoint_exists": bool(self.model_path and self.model_path.is_file()),
+            "configured": bool(self.model_paths),
             "device": str(self.device),
+            "conditions": conditions,
             "error": self.load_error,
         }
