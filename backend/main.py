@@ -7,6 +7,7 @@ from app.api.benchmark import router as benchmark_router
 from app.api.pipeline import nafnet_service, rtdetr_service, router as pipeline_router
 from app.api.video import router as video_router
 from app.core.config import settings
+from app.services.storage import storage
 
 
 @asynccontextmanager
@@ -18,7 +19,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
-    description="All-weather image enhancement with NAFNet and object detection with RT-DETR.",
+    description="All-weather image restoration with NAFNet and object detection with RT-DETR.",
     version=settings.version,
     lifespan=lifespan,
 )
@@ -49,15 +50,18 @@ def read_root():
 
 @app.get("/health", tags=["System"])
 def health_check():
-    return {"status": "healthy"}
+    ready = nafnet_service.loaded and rtdetr_service.loaded
+    return {"status": "healthy" if ready else "degraded", "api_status": "connected"}
 
 
 @app.get("/health/models", tags=["System"])
 def model_health():
+    nafnet = nafnet_service.status()
+    rt_detr = rtdetr_service.status()
+    ready = nafnet_service.loaded and rtdetr_service.loaded
     return {
-        "status": "healthy",
-        "models": {
-            "nafnet": nafnet_service.status(),
-            "rt_detr": rtdetr_service.status(),
-        },
+        "status": "healthy" if ready else "degraded",
+        "models": {"nafnet": nafnet, "rt_detr": rt_detr},
+        "artifact_store": {"status": "ready", "provider": "replaceable-local"},
+        "total_inferences": storage.inference_count(),
     }

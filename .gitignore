@@ -12,3 +12,6 @@ htmlcov/
 models/**/*.pt
 models/**/*.pth
 models/**/*.onnx
+data/
+backend/data/
+frontend/dist/
