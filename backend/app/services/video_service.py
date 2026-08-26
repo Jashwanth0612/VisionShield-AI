@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import io
 import os
 import tempfile
 import time
 import uuid
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -67,9 +67,6 @@ def analyze_video(
         sample_fps = max(0.5, min(float(sample_fps), 10.0))
         stride = max(1, round(source_fps / sample_fps)) if source_fps > 0 else 1
 
-        # Determine the NAFNet condition once from the first sampled frame when
-        # the operator requests automatic weather routing. For an explicit route,
-        # the selected condition is used for every sampled frame.
         selected_weather: str | None = None
         weather_features: dict[str, float] | None = None
         weather_source = "operator-selected" if weather != "auto" else "rule-based-auto"
