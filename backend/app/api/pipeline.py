@@ -1,26 +1,19 @@
 from __future__ import annotations
 
-import base64
 import io
 import time
 from typing import Any
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
-from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
+from PIL import Image, ImageDraw, UnidentifiedImageError
 
+from app.services.image_utils import image_to_data_url
 from app.services.nafnet_service import NAFNetService
 from app.services.rtdetr_service import RTDETRService
 
 router = APIRouter(prefix="/pipeline", tags=["Pipeline"])
 nafnet_service = NAFNetService()
 rtdetr_service = RTDETRService()
-
-
-def _image_to_data_url(image: Image.Image) -> str:
-    buffer = io.BytesIO()
-    image.save(buffer, format="JPEG", quality=90, optimize=True)
-    encoded = base64.b64encode(buffer.getvalue()).decode("ascii")
-    return f"data:image/jpeg;base64,{encoded}"
 
 
 def _annotate(image: Image.Image, detections: list[dict[str, Any]]) -> Image.Image:
@@ -79,10 +72,7 @@ async def process_image(
         "filename": file.filename,
         "image_size": {"width": image.width, "height": image.height},
         "enhancement_enabled": enable_enhancement,
-        "models": {
-            "nafnet": nafnet_service.status(),
-            "rt_detr": rtdetr_service.status(),
-        },
+        "models": {"nafnet": nafnet_service.status(), "rt_detr": rtdetr_service.status()},
         "metrics": {
             "enhancement_latency_ms": enhancement_ms,
             "detection_latency_ms": detection_ms,
@@ -91,6 +81,6 @@ async def process_image(
         },
         "detections_count": len(detections),
         "detections": detections,
-        "enhanced_image": _image_to_data_url(processed),
-        "annotated_image": _image_to_data_url(annotated),
+        "enhanced_image": image_to_data_url(processed),
+        "annotated_image": image_to_data_url(annotated),
     }
