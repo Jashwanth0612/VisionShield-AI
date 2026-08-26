@@ -1,4 +1,8 @@
-const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+const productionApiUrl = 'https://visionshield-api.onrender.com'
+const defaultApiUrl = typeof window !== 'undefined' && window.location.hostname.endsWith('.onrender.com')
+  ? productionApiUrl
+  : 'http://localhost:8000'
+const API_URL = (import.meta.env.VITE_API_URL || defaultApiUrl).replace(/\/$/, '')
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, options)
@@ -24,7 +28,6 @@ function form(fields) {
 
 export const api = {
   baseUrl: API_URL,
-  // Backend exposes the pipeline health endpoint at /pipeline/health.
   health: () => request('/pipeline/health'),
   processImage: ({ file, enhancement, confidence, weather = 'auto' }) => request(`/pipeline/process?enable_enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
