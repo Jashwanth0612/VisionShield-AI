@@ -1,79 +1,105 @@
 # VisionShield AI
 
-> **All-weather computer vision pipeline for image enhancement and robust object detection.**
+> **Premium all-weather computer-vision console combining NAFNet restoration and RT-DETR detection.**
 
-VisionShield AI combines **NAFNet-based image restoration** with **RT-DETR object detection** to improve perception in degraded visual conditions such as fog, rain, low light, and other challenging environments.
+VisionShield AI is split into a presentation layer, a clean API service boundary, and replaceable backend model/storage services. The UI never fabricates inference, benchmark, history, or artifact data.
 
-## Pipeline
+## Architecture
 
 ```text
-Input Image
-    |
-    v
-NAFNet Enhancement
-    |
-    v
-RT-DETR Detection
-    |
-    +--> Bounding Boxes + Confidence
-    +--> Latency / FPS Metrics
-    +--> Annotated Output
+React / Vite console
+        |
+        v
+frontend/src/api.js
+        |
+        v
+FastAPI
+  |       |        |
+  v       v        v
+NAFNet  RT-DETR  StorageService
+  |       |        |
+  +-------+        +--> SQLite metadata
+                   +--> Local artifacts
+
+StorageService is intentionally replaceable with MongoDB/S3/object storage later.
 ```
 
-## Current backend
+## Features
 
-- FastAPI inference API
-- Configurable NAFNet checkpoint adapter
-- RT-DETR inference through Ultralytics
-- Automatic fallback to pretrained RT-DETR when a local checkpoint is absent
-- Annotated detection output returned as a data URL
-- Enhancement, detection, total-latency and FPS-equivalent metrics
-- Model health endpoint
-- Docker support
+- Image inference with NAFNet toggle and RT-DETR confidence threshold
+- Interactive bounding-box overlay plus original / enhanced / annotated views
+- Real generated image artifacts
+- Sampled video inference with generated enhanced and annotated result videos
+- Persistent inference history with search, type filters, configuration, metrics and artifact links
+- Explicit benchmark actions stored separately from inference history
+- Measured latency/FPS/detection trends without accuracy claims
+- Honest model unavailable / loading / error / empty states
+- Responsive dark technical console suitable for a portfolio demonstration
 
-## API
+## Model runtime
 
-Start locally:
+Model weights are **never committed** and are **never downloaded automatically**.
+
+Set these environment variables before enabling inference:
+
+```bash
+NAFNET_WEIGHTS_PATH=/absolute/path/to/nafnet_weights.pth
+RTDETR_WEIGHTS_PATH=/absolute/path/to/rtdetr_weights.pt
+```
+
+The RT-DETR service loads the supplied local checkpoint through Ultralytics. Ultralytics supports RT-DETR checkpoints such as local `.pt` files through its Python API. The backend deliberately does not fall back to a downloadable pretrained checkpoint. citeturn0search0turn0search2
+
+The NAFNet service implements the official NAFNet architecture family and loads a compatible PyTorch checkpoint/state dictionary. The architecture parameters are configurable through `NAFNET_WIDTH`, `NAFNET_MIDDLE_BLOCKS`, `NAFNET_ENCODER_BLOCKS`, and `NAFNET_DECODER_BLOCKS`; they must match the supplied checkpoint. The official NAFNet project publishes multiple task-specific checkpoints/configurations, so the checkpoint and architecture must be selected together. citeturn1search0turn0search1
+
+Example:
+
+```bash
+export NAFNET_WEIGHTS_PATH=/models/nafnet/NAFNet-SIDD-width64.pth
+export RTDETR_WEIGHTS_PATH=/models/rt_detr/rtdetr_custom.pt
+export NAFNET_WIDTH=64
+export NAFNET_MIDDLE_BLOCKS=1
+export NAFNET_ENCODER_BLOCKS=1,1,1,28
+export NAFNET_DECODER_BLOCKS=1,1,1,1
+```
+
+If the paths are absent or incompatible, `/health` reports `degraded` and inference returns `503 model_unavailable`. No synthetic detections or metrics are returned.
+
+## Backend
 
 ```bash
 cd backend
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 uvicorn main:app --reload
 ```
 
-Then open `http://localhost:8000/docs`.
+API documentation is available at `http://localhost:8000/docs`.
 
 ### Main endpoints
 
 - `GET /` — service information
-- `GET /health` — API health
-- `GET /health/models` — model loading status
-- `POST /pipeline/process` — enhancement + RT-DETR detection
+- `GET /health` — overall API/model readiness
+- `GET /health/models` — detailed model and storage status
+- `GET /pipeline/health` — dashboard health contract
+- `POST /pipeline/process` — real image NAFNet + RT-DETR inference
+- `POST /video/analyze` — sampled real video inference
+- `GET /pipeline/history` — persisted inference history
+- `GET /pipeline/history/{run_id}` — persisted run detail
+- `GET /pipeline/artifacts/{artifact_id}` — generated media artifact
+- `POST /benchmark/image` — explicit measured benchmark action
+- `GET /benchmark/summary` — benchmark trends and summary
 
-Example:
+## Frontend
 
 ```bash
-curl -X POST "http://localhost:8000/pipeline/process" \
-  -F "file=@sample.jpg" \
-  -F "enable_enhancement=true" \
-  -F "confidence=0.35"
+cd frontend
+npm install
+npm run dev
 ```
 
-## Model weights
-
-Place project-specific weights at:
-
-```text
-models/
-├── nafnet/
-│   └── nafnet_weights.pth
-└── rt_detr/
-    └── rtdetr_weights.pt
-```
-
-The repository intentionally does **not** commit large model binaries. NAFNet loading expects a compatible serialized/TorchScript module; the exact NAFNet architecture should match the checkpoint you trained or obtained during the research project.
+Set `VITE_API_URL` if the backend is not at `http://localhost:8000`.
 
 ## Docker
 
@@ -81,26 +107,16 @@ The repository intentionally does **not** commit large model binaries. NAFNet lo
 docker compose up --build
 ```
 
-The API will be available at `http://localhost:8000`.
+Mount model files into `./models` and keep them out of Git. The compose setup persists application metadata and artifacts in a named volume.
 
-## Roadmap
+## Storage boundary
 
-- [x] FastAPI backend foundation
-- [x] RT-DETR inference adapter
-- [x] NAFNet checkpoint adapter
-- [x] Annotated inference response
-- [x] Dockerized backend
-- [ ] Production web dashboard
-- [ ] Image comparison slider
-- [ ] Video inference
-- [ ] Experiment benchmarking
-- [ ] Authentication and project history
-- [ ] Cloud deployment
+The current `StorageService` uses SQLite for metadata and local disk for artifacts because it is simple and production-testable. It is deliberately isolated behind a small interface so a future deployment can replace it with MongoDB metadata plus S3-compatible object storage without redesigning the frontend.
+
+## Important measurement rule
+
+Benchmark charts report only measured pipeline performance returned by the backend. They are not accuracy, mAP, PSNR, SSIM, or other evaluation claims unless a future ground-truth evaluation endpoint explicitly supplies those metrics.
 
 ## Tech stack
 
-**Python · FastAPI · PyTorch · TorchVision · Ultralytics RT-DETR · OpenCV · Pillow · Docker**
-
----
-
-Built as an AI/ML computer-vision portfolio project focused on practical deployment and edge-oriented perception.
+**React · Vite · FastAPI · PyTorch · TorchVision · Ultralytics RT-DETR · OpenCV · Pillow · SQLite · Docker**
