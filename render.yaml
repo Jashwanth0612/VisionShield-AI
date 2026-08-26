@@ -20,7 +20,10 @@ services:
       - key: RTDETR_WEIGHTS_PATH
         sync: false
       - key: CORS_ORIGINS
-        sync: false
+        fromService:
+          name: visionshield-frontend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
       - key: ARTIFACT_DIR
         value: /tmp/visionshield-artifacts
       - key: DATABASE_PATH
@@ -32,7 +35,9 @@ services:
     rootDir: frontend
     buildCommand: npm ci && npm run build
     staticPublishPath: ./dist
-    plan: free
     envVars:
       - key: VITE_API_URL
-        sync: false
+        fromService:
+          name: visionshield-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
