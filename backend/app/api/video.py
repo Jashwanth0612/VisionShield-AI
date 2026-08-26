@@ -16,16 +16,18 @@ async def analyze_video_endpoint(
     enable_enhancement: bool = Query(True),
     confidence: float | None = Query(None, ge=0.05, le=0.99),
 ):
-    """Analyze sampled video frames through NAFNet + RT-DETR."""
+    """Analyze sampled video frames through real NAFNet + RT-DETR inference."""
     if file.content_type not in ALLOWED_VIDEO_TYPES:
         raise HTTPException(status_code=400, detail="Unsupported video format. Use MP4, MOV, WebM, AVI, or MPEG.")
     contents = await file.read()
     if not contents:
         raise HTTPException(status_code=400, detail="Uploaded video is empty.")
     if len(contents) > MAX_VIDEO_BYTES:
-        raise HTTPException(status_code=413, detail="Video exceeds the 100 MB upload limit.")
+        raise HTTPException(status_code=413, detail="Video exceeds the configured upload limit.")
     try:
-        result = analyze_video(contents, sample_fps, enable_enhancement, confidence)
+        result = analyze_video(contents, file.filename or "video.mp4", sample_fps, enable_enhancement, confidence)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "success", "filename": file.filename, "result": result}
