@@ -25,18 +25,18 @@ function form(fields) {
 export const api = {
   baseUrl: API_URL,
   health: () => request('/pipeline/health'),
-  processImage: ({ file, enhancement, confidence }) => request(`/pipeline/process?enable_enhancement=${enhancement}&confidence=${confidence}`, {
+  processImage: ({ file, enhancement, confidence, weather = 'auto' }) => request(`/pipeline/process?enable_enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
     body: form({ file }),
   }),
-  analyzeVideo: ({ file, enhancement, sampleFps, confidence }) => request(`/video/analyze?enable_enhancement=${enhancement}&sample_fps=${sampleFps}&confidence=${confidence}`, {
+  analyzeVideo: ({ file, enhancement, sampleFps, confidence, weather = 'auto' }) => request(`/video/analyze?enable_enhancement=${enhancement}&sample_fps=${sampleFps}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
     body: form({ file }),
   }),
   history: ({ search = '', mediaType = 'all' } = {}) => request(`/pipeline/history?search=${encodeURIComponent(search)}&media_type=${mediaType}`),
   historyItem: (runId) => request(`/pipeline/history/${encodeURIComponent(runId)}`),
   benchmarks: () => request('/benchmark/summary'),
-  runImageBenchmark: ({ file, runs, enhancement, confidence }) => request(`/benchmark/image?runs=${runs}&enhancement=${enhancement}&confidence=${confidence}`, {
+  runImageBenchmark: ({ file, runs, enhancement, confidence, weather = 'auto' }) => request(`/benchmark/image?runs=${runs}&enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
     body: form({ file }),
   }),
