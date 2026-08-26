@@ -1,52 +1,72 @@
-import torch
-import numpy as np
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import Any
+
 from PIL import Image
 
+from app.core.config import settings
+
+
 class RTDETRService:
-    def __init__(self, model_path: str = "models/rt_detr/rtdetr_weights.pt", device: str = None, conf_threshold: float = 0.5):
-        if device is None:
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        else:
-            self.device = torch.device(device)
+    """RT-DETR inference adapter with configurable local weights and safe fallback."""
 
-        self.model_path = model_path
-        self.conf_threshold = conf_threshold
-        self.model = None
+    def __init__(self, model_path: str | None = None, conf_threshold: float | None = None):
+        self.model_path = Path(model_path or settings.rtdetr_model)
+        self.conf_threshold = conf_threshold or settings.detection_confidence
+        self.model: Any = None
+        self.device = "cpu"
+        self.loaded = False
+        self.load_error: str | None = None
 
-    def load_model(self):
-        """Load the RT-DETR object detection model weights."""
+    def load_model(self) -> None:
         try:
-            # TODO: Initialize RT-DETR architecture / Ultralytics RT-DETR wrapper
-            # from ultralytics import RTDETR
-            # self.model = RTDETR(self.model_path)
-            print(f"[RTDETRService] Model initialized successfully on device: {self.device}")
-        except Exception as e:
-            print(f"[RTDETRService] Warning: Could not load weights from {self.model_path}: {e}")
+            from ultralytics import RTDETR
 
-    def detect(self, image: Image.Image) -> list:
-        """
-        Runs object detection on the input image (preprocessed or enhanced).
-        Returns a list of detected bounding boxes, class IDs, and confidence scores.
-        """
+            # Prefer the user's trained checkpoint. If it is not present, use the
+            # public pretrained RT-DETR checkpoint so the demo remains runnable.
+            checkpoint = str(self.model_path) if self.model_path.exists() else "rtdetr-l.pt"
+            self.model = RTDETR(checkpoint)
+            self.loaded = True
+            self.load_error = None
+        except Exception as exc:
+            self.model = None
+            self.loaded = False
+            self.load_error = str(exc)
+
+    def detect(self, image: Image.Image) -> list[dict[str, Any]]:
         if self.model is None:
-            # Fallback mock detection structure for pipeline testing
             return []
 
-        # Run inference
-        results = self.model(image, conf=self.conf_threshold)[0]
-        
-        detections = []
-        for box in results.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            confidence = float(box.conf[0])
-            class_id = int(box.cls[0])
-            label = self.model.names[class_id]
+        results = self.model.predict(source=image, conf=self.conf_threshold, verbose=False)
+        if not results:
+            return []
 
+        result = results[0]
+        names = result.names or {}
+        detections: list[dict[str, Any]] = []
+        boxes = result.boxes
+        if boxes is None:
+            return detections
+
+        for box in boxes:
+            xyxy = [round(float(v), 2) for v in box.xyxy[0].tolist()]
+            confidence = round(float(box.conf[0]), 4)
+            class_id = int(box.cls[0])
             detections.append({
-                "bbox": [x1, y1, x2, y2],
+                "bbox": xyxy,
                 "confidence": confidence,
                 "class_id": class_id,
-                "label": label
+                "label": names.get(class_id, str(class_id)),
             })
-
         return detections
+
+    def status(self) -> dict[str, Any]:
+        return {
+            "loaded": self.loaded,
+            "checkpoint": str(self.model_path),
+            "checkpoint_exists": self.model_path.exists(),
+            "confidence_threshold": self.conf_threshold,
+            "error": self.load_error,
+        }
