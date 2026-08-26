@@ -32,18 +32,41 @@ export function StatusPill({ good, children }) {
   return <span className={`status-pill ${good ? 'good' : 'warn'}`}><i />{children}</span>
 }
 
+const NAFNET_CONDITIONS = [
+  ['fog_its', 'Fog · ITS'],
+  ['fog_ots', 'Fog · OTS'],
+  ['rain', 'Rain'],
+  ['snow', 'Snow'],
+  ['low_light', 'Low-Light'],
+]
+
 export function ModelHealth({ health }) {
   const models = health?.models || {}
+  const nafnet = models.nafnet || {}
+  const rtDetr = models.rt_detr || {}
+  const conditionStates = nafnet.conditions || {}
+  const readyConditions = NAFNET_CONDITIONS.filter(([id]) => conditionStates[id]?.checkpoint_exists).length
+
   return <div className="model-health">
-    {['nafnet', 'rt_detr'].map((name) => {
-      const model = models[name]
-      const label = name === 'rt_detr' ? 'RT-DETR' : 'NAFNet'
-      return <div className="health-item" key={name}>
-        <span>{label}</span>
-        <strong className={model?.loaded ? 'ready' : 'unavailable'}>{model?.loaded ? 'READY' : 'UNAVAILABLE'}</strong>
-        <small>{model?.error || (model?.checkpoint ? model.checkpoint : `Configure ${label} weights`)}</small>
-      </div>
-    })}
+    <div className="health-item health-item-wide">
+      <span>NAFNet / condition checkpoints</span>
+      <strong className={readyConditions === NAFNET_CONDITIONS.length ? 'ready' : 'unavailable'}>{readyConditions}/{NAFNET_CONDITIONS.length} CONFIGURED</strong>
+      <div className="condition-grid">{NAFNET_CONDITIONS.map(([id, label]) => {
+        const condition = conditionStates[id]
+        const ready = Boolean(condition?.checkpoint_exists)
+        return <div className={`condition-chip ${ready ? 'ready' : 'unavailable'}`} key={id} title={condition?.error || condition?.checkpoint || `Configure ${label} checkpoint`}><i />{label}</div>
+      })}</div>
+    </div>
+    <div className="health-item">
+      <span>RT-DETR</span>
+      <strong className={rtDetr.loaded ? 'ready' : 'unavailable'}>{rtDetr.loaded ? 'READY' : 'UNAVAILABLE'}</strong>
+      <small>{rtDetr.error || (rtDetr.checkpoint ? rtDetr.checkpoint : 'Configure RTDETR_WEIGHTS_PATH')}</small>
+    </div>
+    <div className="health-item">
+      <span>Inference device</span>
+      <strong>{rtDetr.device || nafnet.device || '—'}</strong>
+      <small>NAFNet and RT-DETR execute from the configured backend runtime.</small>
+    </div>
   </div>
 }
 
