@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import io
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
@@ -9,6 +7,7 @@ from app.services.benchmark_service import benchmark_image
 from app.services.storage import storage
 
 router = APIRouter(prefix="/benchmark", tags=["Benchmark"])
+VALID_WEATHER = {"auto", "fog_its", "fog_ots", "rain", "snow", "low_light"}
 
 
 @router.post("/image")
@@ -17,7 +16,11 @@ async def benchmark_endpoint(
     runs: int = Query(3, ge=1, le=10),
     enhancement: bool = Query(True),
     confidence: float | None = Query(None, ge=0.05, le=0.99),
+    weather: str = Query("auto"),
 ):
+    weather = weather.lower().strip()
+    if weather not in VALID_WEATHER:
+        raise HTTPException(status_code=400, detail=f"Unsupported weather route. Choose one of: {', '.join(sorted(VALID_WEATHER))}.")
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
     contents = await file.read()
@@ -30,7 +33,7 @@ async def benchmark_endpoint(
     if image.width * image.height > 25_000_000:
         raise HTTPException(status_code=413, detail="Image dimensions exceed the 25 MP limit.")
     try:
-        result = benchmark_image(image, file.filename or "benchmark-image", runs, enhancement, confidence)
+        result = benchmark_image(image, file.filename or "benchmark-image", runs, enhancement, confidence, weather)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": str(exc)}) from exc
     return {"status": "success", "result": result}
