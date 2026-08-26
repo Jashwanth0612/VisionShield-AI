@@ -2,6 +2,15 @@ import { useMemo, useState } from 'react'
 import { api } from '../api'
 import { ArtifactLinks, Dropzone, EmptyState, Metric, ModelHealth, Panel } from './Shared'
 
+const WEATHER_OPTIONS = [
+  ['auto', 'Auto detect'],
+  ['fog_its', 'Fog · ITS'],
+  ['fog_ots', 'Fog · OTS'],
+  ['rain', 'Rain'],
+  ['snow', 'Snow'],
+  ['low_light', 'Low-Light'],
+]
+
 function Comparison({ result, preview, view }) {
   if (!result) return <EmptyState title="Awaiting a model response" detail="Run inference after the configured runtime is available." />
   const src = view === 'original' ? preview : view === 'enhanced' ? result.enhanced_image : result.annotated_image
@@ -18,6 +27,7 @@ export default function Workspace({ health, onRefresh }) {
   const [file, setFile] = useState(null)
   const [preview, setPreview] = useState('')
   const [enhancement, setEnhancement] = useState(true)
+  const [weather, setWeather] = useState('auto')
   const [confidence, setConfidence] = useState(.35)
   const [view, setView] = useState('annotated')
   const [result, setResult] = useState(null)
@@ -33,7 +43,7 @@ export default function Workspace({ health, onRefresh }) {
   const run = async () => {
     if (!file) return
     setLoading(true); setError('')
-    try { setResult(await api.processImage({ file, enhancement, confidence })) }
+    try { setResult(await api.processImage({ file, enhancement, confidence, weather })) }
     catch (err) { setResult(null); setError(err.message || 'Inference failed.') }
     finally { setLoading(false) }
   }
@@ -45,14 +55,15 @@ export default function Workspace({ health, onRefresh }) {
 
   return <div className="page">
     <div className="hero">
-      <div><span className="eyebrow">ALL-WEATHER PERCEPTION / IMAGE</span><h1>See clearly.<br /><span>Detect confidently.</span></h1><p>Real NAFNet restoration followed by local RT-DETR inference. No result is shown until the configured runtime returns measured output.</p></div>
-      <div className="pipeline-card"><span>PIPELINE</span><strong>NAFNet <i>→</i> RT-DETR</strong><small>Restore · Detect · Explain</small></div>
+      <div><span className="eyebrow">ALL-WEATHER PERCEPTION / IMAGE</span><h1>See clearly.<br /><span>Detect confidently.</span></h1><p>Weather-routed NAFNet restoration followed by local RT-DETRv2 detection. Choose the known condition or let the rule-based router select the restoration model.</p></div>
+      <div className="pipeline-card"><span>PIPELINE</span><strong>Weather <i>→</i> NAFNet <i>→</i> RT-DETR</strong><small>Restore · Detect · Explain</small></div>
     </div>
 
     <div className="two-col">
       <Panel eyebrow="01 / INPUT + CONTROL" title="Inference workspace">
         <Dropzone file={file} onFile={chooseFile} accept="image/*" label="Drop an image here" hint="or click to browse · JPG, PNG, WEBP · max 20 MB" />
         <div className="control-list">
+          <div className="control-row"><div><b>Weather route</b><small>Routes to one of the five project NAFNet conditions</small></div><select className="weather-select" value={weather} onChange={(e) => setWeather(e.target.value)}>{WEATHER_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
           <div className="control-row"><div><b>NAFNet enhancement</b><small>Restore degraded imagery before detection</small></div><button className={`toggle ${enhancement ? 'active' : ''}`} onClick={() => setEnhancement(!enhancement)} aria-label="Toggle NAFNet"><i /></button></div>
           <div className="range-row"><div><b>RT-DETR confidence</b><strong>{Math.round(confidence * 100)}%</strong></div><input type="range" min=".05" max=".95" step=".01" value={confidence} onChange={(e) => setConfidence(Number(e.target.value))} /></div>
         </div>
@@ -64,7 +75,7 @@ export default function Workspace({ health, onRefresh }) {
       <Panel eyebrow="02 / OUTPUT + OVERLAY" title="Detection result" action={result && <span className="success">● MEASURED</span>}>
         <div className="tabs">{['original', 'enhanced', 'annotated'].map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item}</button>)}</div>
         <div className="result-stage"><Comparison result={result} preview={preview} view={view} /></div>
-        {result && <><div className="metric-grid"><Metric label="Objects" value={result.detections_count} tone="accent" /><Metric label="Confidence" value={averageConfidence} /><Metric label="Latency" value={result.metrics.total_latency_ms} unit="ms" /><Metric label="FPS equivalent" value={result.metrics.fps_equivalent} /></div><ArtifactLinks artifacts={result.artifacts} /></>}
+        {result && <><div className="metric-grid"><Metric label="Objects" value={result.detections_count} tone="accent" /><Metric label="Confidence" value={averageConfidence} /><Metric label="Latency" value={result.metrics.total_latency_ms} unit="ms" /><Metric label="FPS equivalent" value={result.metrics.fps_equivalent} /></div><div className="route-readout"><span>WEATHER ROUTE</span><b>{result.weather?.label || 'Not reported'}</b><small>{result.weather?.source === 'rule-based-auto' ? 'Rule-based auto selection' : 'Operator selected'}</small></div><ArtifactLinks artifacts={result.artifacts} /></>}
       </Panel>
     </div>
 
