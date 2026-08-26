@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.api.pipeline import router as pipeline_router
 
 app = FastAPI(
     title="VisionShield AI API",
@@ -14,6 +15,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Routers
+app.include_router(pipeline_router)
 
 @app.get("/")
 def read_root():
