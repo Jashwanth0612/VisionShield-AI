@@ -6,11 +6,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      RTDETR_MODEL: /app/models/rt_detr/rtdetr_weights.pt
-      NAFNET_CHECKPOINT: /app/models/nafnet/nafnet_weights.pth
+      NAFNET_WEIGHTS_PATH: /app/models/nafnet/nafnet_weights.pth
+      RTDETR_WEIGHTS_PATH: /app/models/rt_detr/rtdetr_weights.pt
+      ARTIFACT_DIR: /app/data/artifacts
+      DATABASE_PATH: /app/data/visionshield.db
       CORS_ORIGINS: http://localhost:5173,http://localhost:8080
     volumes:
       - ./models:/app/models:ro
+      - visionshield-data:/app/data
     restart: unless-stopped
 
   frontend:
@@ -24,3 +27,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  visionshield-data:
