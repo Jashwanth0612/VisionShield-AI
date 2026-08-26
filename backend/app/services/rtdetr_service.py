@@ -47,8 +47,13 @@ class RTDETRService:
             self.load_error = f"Unable to load RT-DETR checkpoint: {exc}"
 
     def detect(self, image: Image.Image, confidence_threshold: float | None = None) -> list[dict[str, Any]]:
+        # Lazy loading keeps tests and direct service usage correct even when the
+        # FastAPI lifespan has not run yet. No checkpoint means a clean failure.
+        if not self.loaded or self.model is None:
+            self.load_model()
         if not self.loaded or self.model is None:
             raise RuntimeError(self.load_error or "RT-DETR model is unavailable.")
+
         threshold = confidence_threshold if confidence_threshold is not None else self.conf_threshold
         results = self.model.predict(source=image, conf=threshold, verbose=False, device=self.device)
         if not results:
