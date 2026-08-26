@@ -47,9 +47,9 @@ NAFNET_WEIGHTS_PATH=/absolute/path/to/nafnet_weights.pth
 RTDETR_WEIGHTS_PATH=/absolute/path/to/rtdetr_weights.pt
 ```
 
-The RT-DETR service loads the supplied local checkpoint through Ultralytics. Ultralytics supports RT-DETR checkpoints such as local `.pt` files through its Python API. The backend deliberately does not fall back to a downloadable pretrained checkpoint. citeturn0search0turn0search2
+The RT-DETR service loads the supplied local checkpoint through Ultralytics. It deliberately does not fall back to a downloadable pretrained checkpoint.
 
-The NAFNet service implements the official NAFNet architecture family and loads a compatible PyTorch checkpoint/state dictionary. The architecture parameters are configurable through `NAFNET_WIDTH`, `NAFNET_MIDDLE_BLOCKS`, `NAFNET_ENCODER_BLOCKS`, and `NAFNET_DECODER_BLOCKS`; they must match the supplied checkpoint. The official NAFNet project publishes multiple task-specific checkpoints/configurations, so the checkpoint and architecture must be selected together. citeturn1search0turn0search1
+The NAFNet service implements the official NAFNet architecture family and loads a compatible PyTorch checkpoint/state dictionary. The architecture parameters are configurable through `NAFNET_WIDTH`, `NAFNET_MIDDLE_BLOCKS`, `NAFNET_ENCODER_BLOCKS`, and `NAFNET_DECODER_BLOCKS`; they must match the supplied checkpoint. NAFNet publishes multiple task-specific checkpoints/configurations, so the checkpoint and architecture must be selected together.
 
 Example:
 
@@ -87,7 +87,7 @@ API documentation is available at `http://localhost:8000/docs`.
 - `POST /video/analyze` — sampled real video inference
 - `GET /pipeline/history` — persisted inference history
 - `GET /pipeline/history/{run_id}` — persisted run detail
-- `GET /pipeline/artifacts/{artifact_id}` — generated media artifact
+- `GET /artifacts/{artifact_id}` — generated media artifact
 - `POST /benchmark/image` — explicit measured benchmark action
 - `GET /benchmark/summary` — benchmark trends and summary
 
