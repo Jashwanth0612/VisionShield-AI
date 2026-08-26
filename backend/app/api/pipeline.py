@@ -14,15 +14,18 @@ from app.services.rtdetr_service import RTDETRService
 router = APIRouter(prefix="/pipeline", tags=["Pipeline"])
 nafnet_service = NAFNetService()
 rtdetr_service = RTDETRService()
+MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_IMAGE_PIXELS = 25_000_000
 
 
 def _annotate(image: Image.Image, detections: list[dict[str, Any]]) -> Image.Image:
     annotated = image.copy()
     draw = ImageDraw.Draw(annotated)
+    line_width = max(2, min(8, image.width // 400))
     for detection in detections:
         x1, y1, x2, y2 = detection["bbox"]
         label = f'{detection["label"]} {detection["confidence"]:.2f}'
-        draw.rectangle((x1, y1, x2, y2), outline=(0, 255, 120), width=max(2, image.width // 400))
+        draw.rectangle((x1, y1, x2, y2), outline=(0, 255, 120), width=line_width)
         try:
             bbox = draw.textbbox((x1, y1), label)
             draw.rectangle(bbox, fill=(0, 0, 0))
@@ -36,7 +39,10 @@ def _validate_image(file: UploadFile, contents: bytes) -> Image.Image:
     if not file.content_type or not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
     try:
-        return Image.open(io.BytesIO(contents)).convert("RGB")
+        image = Image.open(io.BytesIO(contents))
+        if image.width * image.height > MAX_IMAGE_PIXELS:
+            raise HTTPException(status_code=413, detail="Image dimensions exceed the 25 MP safety limit.")
+        return image.convert("RGB")
     except UnidentifiedImageError as exc:
         raise HTTPException(status_code=400, detail="Invalid or unsupported image.") from exc
 
@@ -49,12 +55,9 @@ async def process_image(
 ):
     """Enhance an image with NAFNet and detect objects with RT-DETR."""
     contents = await file.read()
-    if len(contents) > 20 * 1024 * 1024:
+    if len(contents) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="Image exceeds the 20 MB upload limit.")
     image = _validate_image(file, contents)
-
-    if confidence is not None:
-        rtdetr_service.conf_threshold = confidence
 
     pipeline_start = time.perf_counter()
     enhancement_start = time.perf_counter()
@@ -62,7 +65,7 @@ async def process_image(
     enhancement_ms = round((time.perf_counter() - enhancement_start) * 1000, 2)
 
     detection_start = time.perf_counter()
-    detections = rtdetr_service.detect(processed)
+    detections = rtdetr_service.detect(processed, confidence_threshold=confidence)
     detection_ms = round((time.perf_counter() - detection_start) * 1000, 2)
     annotated = _annotate(processed, detections)
     total_ms = round((time.perf_counter() - pipeline_start) * 1000, 2)
