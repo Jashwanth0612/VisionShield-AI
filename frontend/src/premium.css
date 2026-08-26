@@ -21,86 +21,56 @@ body { color: var(--vs-text); }
 .app-shell { background: var(--vs-bg) !important; }
 
 /* 60%: quiet canvas / 30%: structural surfaces / 10%: accent */
-aside {
-  background: #0a0e12 !important;
-  border-right-color: var(--vs-line) !important;
-}
-header {
-  background: rgba(7, 10, 13, 0.92) !important;
-  border-bottom-color: var(--vs-line) !important;
-}
-.panel {
-  background: linear-gradient(145deg, rgba(17,23,28,.96), rgba(12,17,21,.98)) !important;
-  border-color: var(--vs-line) !important;
-  box-shadow: 0 16px 42px rgba(0,0,0,.22) !important;
-}
+aside { background: #0a0e12 !important; border-right-color: var(--vs-line) !important; }
+header { background: rgba(7, 10, 13, 0.92) !important; border-bottom-color: var(--vs-line) !important; }
+.panel { background: linear-gradient(145deg, rgba(17,23,28,.96), rgba(12,17,21,.98)) !important; border-color: var(--vs-line) !important; box-shadow: 0 16px 42px rgba(0,0,0,.22) !important; }
 
-.brand-mark {
-  border-color: rgba(99,231,210,.35) !important;
-  color: var(--vs-accent) !important;
-  box-shadow: none !important;
-}
+.brand-mark { border-color: rgba(99,231,210,.35) !important; color: var(--vs-accent) !important; box-shadow: none !important; }
 .brand b span, .hero h1 span, .section-intro h1 span { color: var(--vs-accent) !important; }
-
-nav button.selected {
-  background: var(--vs-accent-soft) !important;
-  border-color: rgba(99,231,210,.18) !important;
-  box-shadow: inset 2px 0 var(--vs-accent) !important;
-}
+nav button.selected { background: var(--vs-accent-soft) !important; border-color: rgba(99,231,210,.18) !important; box-shadow: inset 2px 0 var(--vs-accent) !important; }
 nav button.selected span, nav button.selected i { color: var(--vs-accent) !important; }
-
-.pipeline-card {
-  background: var(--vs-surface) !important;
-  border-color: var(--vs-line) !important;
-  box-shadow: none !important;
-}
+.pipeline-card { background: var(--vs-surface) !important; border-color: var(--vs-line) !important; box-shadow: none !important; }
 .pipeline-card i { color: var(--vs-accent) !important; }
 
 .dropzone { background: #0a0f13 !important; border-color: var(--vs-line-strong) !important; }
 .dropzone:hover, .dropzone.dragging { background: #0d1518 !important; border-color: rgba(99,231,210,.55) !important; }
 .drop-icon { color: var(--vs-accent) !important; border-color: var(--vs-line-strong) !important; }
-
-.primary {
-  background: var(--vs-accent) !important;
-  color: #06201d !important;
-  border-color: var(--vs-accent) !important;
-  box-shadow: 0 8px 22px rgba(99,231,210,.12) !important;
-  font-weight: 700;
-}
+.primary { background: var(--vs-accent) !important; color: #06201d !important; border-color: var(--vs-accent) !important; box-shadow: 0 8px 22px rgba(99,231,210,.12) !important; font-weight: 700; }
 .primary:hover:not(:disabled) { filter: brightness(1.04); transform: translateY(-1px); }
 .secondary, .ghost { background: #10161a !important; border-color: var(--vs-line-strong) !important; }
 .secondary:hover:not(:disabled), .ghost:hover:not(:disabled) { border-color: rgba(99,231,210,.3) !important; color: var(--vs-accent) !important; }
-
 .toggle.active { border-color: rgba(99,231,210,.5) !important; background: rgba(99,231,210,.1) !important; }
 .toggle.active i { background: var(--vs-accent) !important; box-shadow: none !important; }
 .range-row input { accent-color: var(--vs-accent) !important; }
 .range-row strong, .metric.accent strong, .status-pill, .success { color: var(--vs-accent) !important; }
 .status-pill i { background: var(--vs-accent) !important; box-shadow: none !important; }
-
-.tabs button.active, .filter-tabs button.active {
-  background: var(--vs-accent-soft) !important;
-  color: var(--vs-accent) !important;
-}
+.tabs button.active, .filter-tabs button.active { background: var(--vs-accent-soft) !important; color: var(--vs-accent) !important; }
 .result-stage { background: #05080a !important; border-color: var(--vs-line) !important; }
 .bbox { border-color: var(--vs-accent) !important; background: rgba(99,231,210,.025) !important; }
 .bbox b, .bbox span { color: var(--vs-accent) !important; }
-
 .metric-grid { border-top-color: var(--vs-line) !important; }
 .metric { border-right-color: var(--vs-line) !important; }
 .confidence-track { background: #1b2429 !important; }
 .confidence-track i, .class-bars i { background: var(--vs-accent) !important; }
 .detection-dot { background: var(--vs-accent) !important; box-shadow: none !important; }
-
 .notice { border-left-color: var(--vs-accent) !important; background: #0b1518 !important; }
 .notice span { color: var(--vs-accent) !important; }
 .artifact-links a { background: #0d1718 !important; border-color: rgba(99,231,210,.18) !important; color: #9ddbd2 !important; }
 .artifact-links a:hover { background: var(--vs-accent-soft) !important; }
 
+/* Condition-specific NAFNet status: the five project routes are first-class runtime states. */
+.health-item-wide { grid-column: 1 / -1; }
+.condition-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+.condition-chip { min-width: 0; border: 1px solid var(--vs-line); padding: 8px 7px; color: var(--vs-muted); font: 8px 'DM Mono'; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.condition-chip i { width: 5px; height: 5px; border-radius: 50%; background: #58666b; flex: 0 0 auto; }
+.condition-chip.ready { color: var(--vs-accent); border-color: rgba(99,231,210,.18); background: rgba(99,231,210,.035); }
+.condition-chip.ready i { background: var(--vs-accent); }
+.condition-chip.unavailable { color: #7c6962; }
+
 /* Reduce decorative noise: premium interfaces rely on hierarchy, not glow. */
 .app-shell, .panel, aside, header, .pipeline-card { text-shadow: none; }
 * { scrollbar-color: #263237 var(--vs-bg); }
 
-@media (max-width: 760px) {
-  .content { padding-left: 18px; padding-right: 18px; }
-  .hero h1, .section-intro h1 { letter-spacing: -2px; }
-}
+@media (max-width: 900px) { .condition-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .content { padding-left: 18px; padding-right: 18px; } .hero h1, .section-intro h1 { letter-spacing: -2px; } }
+@media (max-width: 480px) { .condition-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
