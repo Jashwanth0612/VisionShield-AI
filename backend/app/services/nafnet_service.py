@@ -92,14 +92,6 @@ class NAFNet(nn.Module):
         self.intro = nn.Conv2d(img_channel, width, 3, 1, 1, bias=True)
         self.ending = nn.Conv2d(width, img_channel, 3, 1, 1, bias=True)
         self.encoders = nn.ModuleList()
-        self.decoders = nn.ModuleList()
-        chan = width
-        for num in enc_blk_nums:
-            self.encoders.append(nn.Sequential(*[NAFBlock(chan) for _ in range(num)]))
-            self.encoders[-1].add_module("down", nn.Identity())
-            chan *= 2
-        # Build the encoder/decoder explicitly so checkpoint keys remain stable.
-        self.encoders = nn.ModuleList()
         self.downs = nn.ModuleList()
         chan = width
         for num in enc_blk_nums:
@@ -208,12 +200,22 @@ class NAFNetService:
         model = self.models.get(weather)
         if model is None:
             raise RuntimeError(self.load_errors.get(weather) or "NAFNet model is unavailable.")
-        tensor = self.transform(image).unsqueeze(0).to(self.device)
+
+        original_size = image.size
+        working = image.convert("RGB")
+        if max(working.size) > 1024:
+            scale = 1024 / max(working.size)
+            working = working.resize((max(1, round(working.width * scale)), max(1, round(working.height * scale))), Image.Resampling.LANCZOS)
+
+        tensor = self.transform(working).unsqueeze(0).to(self.device)
         output = model(tensor)
         if isinstance(output, (tuple, list)):
             output = output[0]
         output = output.squeeze(0).detach().cpu().clamp(0, 1)
-        return transforms.ToPILImage()(output)
+        enhanced = transforms.ToPILImage()(output)
+        if enhanced.size != original_size:
+            enhanced = enhanced.resize(original_size, Image.Resampling.LANCZOS)
+        return enhanced
 
     def status(self) -> dict[str, Any]:
         conditions = {}
