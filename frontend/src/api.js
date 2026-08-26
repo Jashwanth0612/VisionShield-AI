@@ -24,6 +24,7 @@ function form(fields) {
 
 export const api = {
   baseUrl: API_URL,
+  // Backend exposes the pipeline health endpoint at /pipeline/health.
   health: () => request('/pipeline/health'),
   processImage: ({ file, enhancement, confidence, weather = 'auto' }) => request(`/pipeline/process?enable_enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
@@ -35,9 +36,9 @@ export const api = {
   }),
   history: ({ search = '', mediaType = 'all' } = {}) => request(`/pipeline/history?search=${encodeURIComponent(search)}&media_type=${mediaType}`),
   historyItem: (runId) => request(`/pipeline/history/${encodeURIComponent(runId)}`),
-  benchmarks: () => request('/benchmark/summary'),
-  runImageBenchmark: ({ file, runs, enhancement, confidence, weather = 'auto' }) => request(`/benchmark/image?runs=${runs}&enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
+  benchmarks: () => request('/benchmarks/summary'),
+  runImageBenchmark: ({ file, runs, enhancement, confidence, weather = 'auto' }) => request('/benchmarks/run', {
     method: 'POST',
-    body: form({ file }),
+    body: form({ file, iterations: runs, enable_enhancement: enhancement, confidence, weather }),
   }),
 }
