@@ -1,0 +1,13 @@
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: visionshield-backend
+    ports:
+      - "8000:8000"
+    environment:
+      RTDETR_MODEL: /app/models/rt_detr/rtdetr_weights.pt
+      NAFNET_CHECKPOINT: /app/models/nafnet/nafnet_weights.pth
+    volumes:
+      - ./models:/app/models:ro
+    restart: unless-stopped
