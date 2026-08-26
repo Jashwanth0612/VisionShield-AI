@@ -6,14 +6,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     app_name: str = "VisionShield AI API"
-    version: str = "2.0.0"
+    version: str = "2.1.0"
 
-    # Never commit model weights. Supply absolute or container-mounted paths at runtime.
+    # Model weights are supplied at runtime and are never committed to the repository.
+    # The NAFNet implementation uses five condition-specific checkpoints from the project:
+    # Fog-ITS, Fog-OTS, Rain, Snow and Low-Light.
     nafnet_weights_path: str = ""
+    nafnet_its_weights_path: str = ""
+    nafnet_ots_weights_path: str = ""
+    nafnet_rain_weights_path: str = ""
+    nafnet_snow_weights_path: str = ""
+    nafnet_lowlight_weights_path: str = ""
     rtdetr_weights_path: str = ""
 
-    # NAFNet architecture knobs match the official NAFNet family; tune them to the supplied checkpoint.
-    nafnet_width: int = 32
+    # Matches the training configuration documented in the project PPT.
+    nafnet_width: int = 64
     nafnet_middle_blocks: int = 1
     nafnet_encoder_blocks: str = "1,1,1,28"
     nafnet_decoder_blocks: str = "1,1,1,1"
@@ -32,6 +39,20 @@ class Settings(BaseSettings):
     @property
     def nafnet_path(self) -> Path:
         return Path(self.nafnet_weights_path).expanduser() if self.nafnet_weights_path else Path()
+
+    @property
+    def nafnet_paths(self) -> dict[str, Path]:
+        configured = {
+            "fog_its": self.nafnet_its_weights_path,
+            "fog_ots": self.nafnet_ots_weights_path,
+            "rain": self.nafnet_rain_weights_path,
+            "snow": self.nafnet_snow_weights_path,
+            "low_light": self.nafnet_lowlight_weights_path,
+        }
+        # Keep the original single-checkpoint setting as a compatibility fallback.
+        if self.nafnet_weights_path and not any(configured.values()):
+            configured["fog_its"] = self.nafnet_weights_path
+        return {key: Path(value).expanduser() for key, value in configured.items() if value}
 
     @property
     def rtdetr_path(self) -> Path:
