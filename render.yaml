@@ -7,18 +7,20 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
+      # Leave model paths empty until the real checkpoints are available.
+      # The backend intentionally reports the models as unavailable rather than fabricating inference results.
       - key: NAFNET_ITS_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: NAFNET_OTS_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: NAFNET_RAIN_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: NAFNET_SNOW_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: NAFNET_LOWLIGHT_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: RTDETR_WEIGHTS_PATH
-        sync: false
+        value: ""
       - key: CORS_ORIGINS
         fromService:
           name: visionshield-frontend
