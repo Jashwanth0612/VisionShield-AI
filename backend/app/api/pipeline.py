@@ -65,6 +65,11 @@ def _require_models(enable_enhancement: bool, weather: str) -> None:
         condition = nafnet_service.status().get("conditions", {}).get(weather, {})
         if not condition.get("loaded"):
             raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": condition.get("error") or "NAFNet is unavailable.", "model": "NAFNet", "weather": weather})
+
+    # RT-DETR is also lazy-loaded. This keeps startup light while ensuring the
+    # first real inference loads the explicitly configured checkpoint.
+    if not rtdetr_service.loaded:
+        rtdetr_service.load_model()
     if not rtdetr_service.loaded:
         raise HTTPException(status_code=503, detail={"code": "model_unavailable", "message": rtdetr_service.load_error or "RT-DETR is unavailable.", "model": "RT-DETR"})
 
@@ -90,9 +95,7 @@ async def process_image(
 
     detected_weather = weather
     weather_features: dict[str, float] | None = None
-    if enable_enhancement and weather == "auto":
-        detected_weather, weather_features = classify_weather(image)
-    elif weather == "auto":
+    if weather == "auto":
         detected_weather, weather_features = classify_weather(image)
 
     _require_models(enable_enhancement, detected_weather)
