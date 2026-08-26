@@ -14,9 +14,11 @@ from PIL import Image, ImageDraw
 from app.api.pipeline import nafnet_service, rtdetr_service
 from app.core.config import settings
 from app.services.storage import storage
+from app.services.weather_classifier import classify_weather, weather_label
 
 MAX_VIDEO_BYTES = settings.max_video_mb * 1024 * 1024
 MAX_VIDEO_SECONDS = settings.max_video_seconds
+VALID_WEATHER = {"auto", "fog_its", "fog_ots", "rain", "snow", "low_light"}
 
 
 def _annotate_frame(image: Image.Image, detections: list[dict[str, Any]]) -> Image.Image:
@@ -31,15 +33,18 @@ def _annotate_frame(image: Image.Image, detections: list[dict[str, Any]]) -> Ima
     return frame
 
 
-def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhancement: bool = True, confidence: float | None = None) -> dict[str, Any]:
-    """Run sampled NAFNet + RT-DETR inference and write a sampled annotated result video."""
-    if enhancement and not nafnet_service.loaded:
-        raise RuntimeError(nafnet_service.load_error or "NAFNet is unavailable.")
-    if not rtdetr_service.loaded:
-        raise RuntimeError(rtdetr_service.load_error or "RT-DETR is unavailable.")
-    if len(contents) > MAX_VIDEO_BYTES:
-        raise ValueError(f"Video exceeds the {settings.max_video_mb} MB upload limit.")
-    sample_fps = max(0.5, min(float(sample_fps), 10.0))
+def analyze_video(
+    contents: bytes,
+    filename: str,
+    sample_fps: float = 2.0,
+    enhancement: bool = True,
+    confidence: float | None = None,
+    weather: str = "auto",
+) -> dict[str, Any]:
+    """Run sampled weather-routed NAFNet + RT-DETR inference and write sampled result videos."""
+    weather = weather.lower().strip()
+    if weather not in VALID_WEATHER:
+        raise ValueError(f"Unsupported weather route. Choose one of: {', '.join(sorted(VALID_WEATHER))}.")
 
     tmp_path: str | None = None
     annotated_path: str | None = None
@@ -48,6 +53,7 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
         with tempfile.NamedTemporaryFile(suffix=PathSuffix(filename), delete=False) as tmp:
             tmp.write(contents)
             tmp_path = tmp.name
+
         capture = cv2.VideoCapture(tmp_path)
         if not capture.isOpened():
             raise ValueError("Unable to decode the uploaded video.")
@@ -58,7 +64,21 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
         if duration > MAX_VIDEO_SECONDS:
             raise ValueError(f"Video exceeds the {MAX_VIDEO_SECONDS} second analysis limit.")
 
+        sample_fps = max(0.5, min(float(sample_fps), 10.0))
         stride = max(1, round(source_fps / sample_fps)) if source_fps > 0 else 1
+
+        # Determine the NAFNet condition once from the first sampled frame when
+        # the operator requests automatic weather routing. For an explicit route,
+        # the selected condition is used for every sampled frame.
+        selected_weather: str | None = None
+        weather_features: dict[str, float] | None = None
+        weather_source = "operator-selected" if weather != "auto" else "rule-based-auto"
+
+        if not rtdetr_service.loaded:
+            rtdetr_service.load_model()
+        if not rtdetr_service.loaded:
+            raise RuntimeError(rtdetr_service.load_error or "RT-DETR is unavailable.")
+
         processed_frames = 0
         detections_total = 0
         labels: dict[str, int] = {}
@@ -86,8 +106,20 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
 
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             image = Image.fromarray(rgb)
+
+            if selected_weather is None:
+                if weather == "auto":
+                    selected_weather, weather_features = classify_weather(image)
+                else:
+                    selected_weather = weather
+                if enhancement:
+                    nafnet_service.load_model(selected_weather)
+                    condition = nafnet_service.status().get("conditions", {}).get(selected_weather, {})
+                    if not condition.get("loaded"):
+                        raise RuntimeError(condition.get("error") or f"NAFNet is unavailable for {weather_label(selected_weather)}.")
+
             inference_start = time.perf_counter()
-            processed = nafnet_service.enhance_image(image) if enhancement else image.copy()
+            processed = nafnet_service.enhance_image(image, selected_weather) if enhancement else image.copy()
             detections = rtdetr_service.detect(processed, confidence_threshold=confidence)
             total_inference_ms += (time.perf_counter() - inference_start) * 1000
 
@@ -117,6 +149,8 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
 
         if processed_frames == 0:
             raise ValueError("No decodable frames were available at the selected sampling rate.")
+        if selected_weather is None:
+            raise ValueError("Unable to determine a weather route from the uploaded video.")
 
         elapsed_ms = (time.perf_counter() - started) * 1000
         run_id = f"vid_{uuid.uuid4().hex[:12]}"
@@ -128,20 +162,33 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
         analysis_fps = round(processed_frames / (elapsed_ms / 1000), 2) if elapsed_ms else 0
         models = {"nafnet": nafnet_service.status(), "rt_detr": rtdetr_service.status()}
         timestamp = storage.now()
+        model_config = f"NAFNet={weather_label(selected_weather)} {'on' if enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}"
         storage.record_inference({
             "run_id": run_id,
             "timestamp": timestamp,
             "media_type": "video",
             "filename": filename or "video",
             "nafnet_enabled": enhancement,
+            "weather_route": selected_weather,
+            "weather_label": weather_label(selected_weather),
+            "weather_source": weather_source,
+            "weather_features": weather_features,
             "confidence_threshold": confidence if confidence is not None else rtdetr_service.conf_threshold,
             "detections": detections_total,
             "latency_ms": latency,
             "fps": analysis_fps,
             "model_status": "ready",
-            "model_config": f"NAFNet={'on' if enhancement else 'off'} · RT-DETR conf={confidence if confidence is not None else rtdetr_service.conf_threshold:.2f}",
+            "model_config": model_config,
             "artifacts": {"original": original_artifact, "enhanced": enhanced_artifact, "annotated": annotated_artifact},
-            "details": {"duration_seconds": round(duration, 2), "source_fps": round(source_fps, 2), "sample_fps": sample_fps, "frames_analyzed": processed_frames, "detections_per_frame": round(detections_total / processed_frames, 2), "detected_classes": labels, "models": models},
+            "details": {
+                "duration_seconds": round(duration, 2),
+                "source_fps": round(source_fps, 2),
+                "sample_fps": sample_fps,
+                "frames_analyzed": processed_frames,
+                "detections_per_frame": round(detections_total / processed_frames, 2),
+                "detected_classes": labels,
+                "models": models,
+            },
         })
 
         return {
@@ -157,6 +204,13 @@ def analyze_video(contents: bytes, filename: str, sample_fps: float = 2.0, enhan
             "analysis_fps": analysis_fps,
             "detected_classes": dict(sorted(labels.items(), key=lambda item: (-item[1], item[0]))),
             "enhancement_enabled": enhancement,
+            "weather": {
+                "requested": weather,
+                "selected": selected_weather,
+                "label": weather_label(selected_weather),
+                "source": weather_source,
+                "features": weather_features,
+            },
             "models": models,
             "artifacts": {"original": original_artifact, "enhanced": enhanced_artifact, "annotated": annotated_artifact},
         }
