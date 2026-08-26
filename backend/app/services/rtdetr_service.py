@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Any
 
@@ -24,8 +23,6 @@ class RTDETRService:
         try:
             from ultralytics import RTDETR
 
-            # Prefer the user's trained checkpoint. If it is not present, use the
-            # public pretrained RT-DETR checkpoint so the demo remains runnable.
             checkpoint = str(self.model_path) if self.model_path.exists() else "rtdetr-l.pt"
             self.model = RTDETR(checkpoint)
             self.loaded = True
@@ -35,11 +32,20 @@ class RTDETRService:
             self.loaded = False
             self.load_error = str(exc)
 
-    def detect(self, image: Image.Image) -> list[dict[str, Any]]:
+    def detect(
+        self,
+        image: Image.Image,
+        confidence_threshold: float | None = None,
+    ) -> list[dict[str, Any]]:
         if self.model is None:
             return []
 
-        results = self.model.predict(source=image, conf=self.conf_threshold, verbose=False)
+        threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else self.conf_threshold
+        )
+        results = self.model.predict(source=image, conf=threshold, verbose=False)
         if not results:
             return []
 
