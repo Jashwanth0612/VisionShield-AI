@@ -1,8 +1,4 @@
-const productionApiUrl = 'https://visionshield-api.onrender.com'
-const defaultApiUrl = typeof window !== 'undefined' && window.location.hostname.endsWith('.onrender.com')
-  ? productionApiUrl
-  : 'http://localhost:8000'
-const API_URL = (import.meta.env.VITE_API_URL || defaultApiUrl).replace(/\/$/, '')
+const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, options)
@@ -28,7 +24,8 @@ function form(fields) {
 
 export const api = {
   baseUrl: API_URL,
-  health: () => request('/pipeline/health'),
+  // Backend mounts the pipeline router without a /pipeline prefix.
+  health: () => request('/health'),
   processImage: ({ file, enhancement, confidence, weather = 'auto' }) => request(`/pipeline/process?enable_enhancement=${enhancement}&confidence=${confidence}&weather=${encodeURIComponent(weather)}`, {
     method: 'POST',
     body: form({ file }),
@@ -37,8 +34,8 @@ export const api = {
     method: 'POST',
     body: form({ file }),
   }),
-  history: ({ search = '', mediaType = 'all' } = {}) => request(`/pipeline/history?search=${encodeURIComponent(search)}&media_type=${mediaType}`),
-  historyItem: (runId) => request(`/pipeline/history/${encodeURIComponent(runId)}`),
+  history: ({ search = '', mediaType = 'all' } = {}) => request(`/history?search=${encodeURIComponent(search)}&media_type=${mediaType}`),
+  historyItem: (runId) => request(`/history/${encodeURIComponent(runId)}`),
   benchmarks: () => request('/benchmarks/summary'),
   runImageBenchmark: ({ file, runs, enhancement, confidence, weather = 'auto' }) => request('/benchmarks/run', {
     method: 'POST',
