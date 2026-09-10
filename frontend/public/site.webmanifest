@@ -1,0 +1,15 @@
+{
+  "name": "VisionShield AI",
+  "short_name": "VisionShield",
+  "description": "All-weather visual perception with condition-aware image restoration and object detection.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4efe5",
+  "theme_color": "#f4efe5",
+  "icons": [{
+    "src": "/favicon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml",
+    "purpose": "any maskable"
+  }]
+}
