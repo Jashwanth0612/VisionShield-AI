@@ -6,10 +6,14 @@ from typing import Any
 from PIL import Image
 
 from app.core.config import settings
+from app.services.drive_weights import drive_weights
+
+
+RTDETR_FILENAME = "RTDETRv2_AQM_SOS_best.pth"
 
 
 class RTDETRService:
-    """RT-DETR inference adapter using only explicitly configured local weights."""
+    """VisionShield adapter for the project's native RT-DETRv2 AQM+SOS model."""
 
     def __init__(self, model_path: str | None = None, conf_threshold: float | None = None):
         configured_path = model_path or settings.rtdetr_weights_path
@@ -28,61 +32,54 @@ class RTDETRService:
         except Exception:
             return False
 
+    def _resolve_checkpoint(self) -> Path:
+        if self.model_path is not None:
+            return self.model_path
+        # Render's filesystem is ephemeral, so production checkpoints are
+        # materialized lazily from the public Google Drive archive.
+        return drive_weights.ensure(RTDETR_FILENAME)
+
     def load_model(self) -> None:
         self.model = None
         self.loaded = False
         self.load_error = None
-        if self.model_path is None:
-            self.load_error = "RT-DETR weights are not configured. Set RTDETR_WEIGHTS_PATH."
-            return
-        if not self.model_path.is_file():
-            self.load_error = "Configured RT-DETR weight file was not found."
-            return
         try:
-            from ultralytics import RTDETR
-            self.model = RTDETR(str(self.model_path))
+            checkpoint = self._resolve_checkpoint()
+            if not checkpoint.is_file():
+                self.load_error = "Configured RT-DETR checkpoint was not found."
+                return
+            from app.services.rtdetr_native import NativeRTDETR
+            self.model = NativeRTDETR(checkpoint=checkpoint, device=self.device)
+            self.model.load()
+            if not self.model.loaded:
+                self.load_error = self.model.load_error or "Native RT-DETRv2 model is unavailable."
+                return
+            self.model_path = checkpoint
             self.loaded = True
         except Exception as exc:
             self.model = None
-            self.load_error = f"Unable to load RT-DETR checkpoint: {exc}"
+            self.load_error = f"Unable to load native RT-DETRv2 AQM+SOS checkpoint: {exc}"
 
     def detect(self, image: Image.Image, confidence_threshold: float | None = None) -> list[dict[str, Any]]:
-        # Lazy loading keeps tests and direct service usage correct even when the
-        # FastAPI lifespan has not run yet. No checkpoint means a clean failure.
         if not self.loaded or self.model is None:
             self.load_model()
         if not self.loaded or self.model is None:
-            raise RuntimeError(self.load_error or "RT-DETR model is unavailable.")
-
+            raise RuntimeError(self.load_error or "RT-DETRv2 model is unavailable.")
         threshold = confidence_threshold if confidence_threshold is not None else self.conf_threshold
-        results = self.model.predict(source=image, conf=threshold, verbose=False, device=self.device)
-        if not results:
-            return []
-        result = results[0]
-        names = result.names or {}
-        boxes = result.boxes
-        if boxes is None:
-            return []
-        detections: list[dict[str, Any]] = []
-        for box in boxes:
-            xyxy = [round(float(value), 2) for value in box.xyxy[0].tolist()]
-            confidence = round(float(box.conf[0]), 4)
-            class_id = int(box.cls[0])
-            detections.append({
-                "bbox": xyxy,
-                "confidence": confidence,
-                "class_id": class_id,
-                "label": names.get(class_id, str(class_id)),
-            })
-        return detections
+        return self.model.detect(image, confidence=threshold)
 
     def status(self) -> dict[str, Any]:
+        native_status = self.model.status() if self.model is not None else None
         return {
             "loaded": self.loaded,
-            "configured": bool(self.model_path),
-            "checkpoint": self.model_path.name if self.model_path else None,
+            "configured": bool(self.model_path or drive_weights.is_configured(RTDETR_FILENAME)),
+            "checkpoint": self.model_path.name if self.model_path else RTDETR_FILENAME,
             "checkpoint_exists": bool(self.model_path and self.model_path.is_file()),
             "confidence_threshold": self.conf_threshold,
             "device": self.device,
+            "runtime": "native_rtdetrv2",
+            "aqm": True,
+            "sos": True,
             "error": self.load_error,
+            "native": native_status,
         }
