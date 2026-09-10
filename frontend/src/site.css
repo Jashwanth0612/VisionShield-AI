@@ -1,0 +1,17 @@
+nav a { color: inherit; text-decoration: none; }
+aside nav a { border: 1px solid transparent; background: transparent; color: #53697b; text-align: left; display: grid; grid-template-columns: 23px 1fr 12px; align-items: center; padding: 12px 10px; font-size: 11px; transition: .18s; }
+aside nav a span { color: #7b8994; font-size: 16px; }
+aside nav a i { font-style: normal; color: #9aa4aa; font-size: 17px; }
+aside nav a:hover { background: #e8e1d4; color: #102a43; }
+aside nav a.selected { background: #e3e9ed; border-color: #d0d8dd; color: #102a43; box-shadow: inset 3px 0 #173e5f; }
+aside nav a.selected span, aside nav a.selected i { color: #173e5f; }
+
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #173e5f; outline-offset: 2px; }
+.mobile-menu { color: #102a43 !important; }
+.avatar { background: #173e5f !important; border-color: #173e5f !important; color: #fff !important; }
+.site-footer nav { display: flex !important; gap: 14px; }
+.site-footer nav a { display: inline !important; padding: 0 !important; border: 0 !important; background: transparent !important; box-shadow: none !important; }
+
+/* Keep media meaningful to assistive technology and search engines. */
+img { max-width: 100%; }
+.source-video, .artifact-viewer video { background: #e8e2d7; }
