@@ -34,10 +34,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(pipeline_router)
-app.include_router(benchmark_router)
-app.include_router(video_router)
-
 
 @app.get("/", tags=["System"])
 def read_root():
@@ -80,3 +76,11 @@ def model_health():
         "artifact_store": {"status": "ready", "provider": "replaceable-local"},
         "total_inferences": storage.inference_count(),
     }
+
+
+# Register feature routers after the canonical system health routes. The
+# pipeline router also exposes a legacy /health endpoint; keeping the system
+# health route first ensures the frontend receives runtime_configured status.
+app.include_router(pipeline_router)
+app.include_router(benchmark_router)
+app.include_router(video_router)
