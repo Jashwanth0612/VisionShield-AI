@@ -2,20 +2,25 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    RTDETR_RUNTIME_ROOT=/opt/RT-DETR/rtdetrv2_pytorch \
+    PYTHONPATH=/opt/RT-DETR/rtdetrv2_pytorch
 
 WORKDIR /app
 
-# Runtime libraries required by OpenCV/Ultralytics in the slim image.
-# libgl1 provides libGL.so.1; the other libraries cover OpenCV's common
-# native GUI/image dependencies even though the API itself is headless.
+# OpenCV runtime libraries plus git for the official RT-DETRv2 source runtime.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Pin the detector runtime to the official RT-DETR repository rather than
+# duplicating the upstream source tree inside VisionShield.
+RUN git clone --depth 1 https://github.com/lyuwenyu/RT-DETR.git /opt/RT-DETR
 
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
