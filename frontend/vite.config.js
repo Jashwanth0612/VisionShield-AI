@@ -34,11 +34,6 @@ export default defineConfig(({ mode }) => {
     build: {
       sourcemap: false,
       cssCodeSplit: true,
-      rollupOptions: {
-        output: {
-          manualChunks: { react: ['react', 'react-dom'] },
-        },
-      },
     },
   }
 })
