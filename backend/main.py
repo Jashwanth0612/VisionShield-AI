@@ -7,13 +7,14 @@ from app.api.benchmark import router as benchmark_router
 from app.api.pipeline import nafnet_service, rtdetr_service, router as pipeline_router
 from app.api.video import router as video_router
 from app.core.config import settings
+from app.services.drive_weights import drive_weights
 from app.services.storage import storage
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    nafnet_service.load_model()
-    rtdetr_service.load_model()
+    # Model checkpoints are loaded lazily. This is important on Render's
+    # ephemeral free tier: a cold start should not immediately download ~1.94 GB.
     yield
 
 
@@ -50,8 +51,14 @@ def read_root():
 
 @app.get("/health", tags=["System"])
 def health_check():
+    configured = bool(drive_weights.status())
     ready = nafnet_service.loaded and rtdetr_service.loaded
-    return {"status": "healthy" if ready else "degraded", "api_status": "connected"}
+    return {
+        "status": "healthy" if ready else ("configured" if configured else "degraded"),
+        "api_status": "connected",
+        "models_loaded": ready,
+        "model_loading": "lazy",
+    }
 
 
 @app.get("/health/models", tags=["System"])
@@ -60,8 +67,9 @@ def model_health():
     rt_detr = rtdetr_service.status()
     ready = nafnet_service.loaded and rtdetr_service.loaded
     return {
-        "status": "healthy" if ready else "degraded",
+        "status": "healthy" if ready else "configured",
         "models": {"nafnet": nafnet, "rt_detr": rt_detr},
+        "weight_store": {"provider": "google-drive", "lazy": True, "assets": drive_weights.status()},
         "artifact_store": {"status": "ready", "provider": "replaceable-local"},
         "total_inferences": storage.inference_count(),
     }
