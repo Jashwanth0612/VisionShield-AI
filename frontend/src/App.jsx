@@ -118,9 +118,10 @@ export default function App() {
   const page = active ? pages[active] : null
   useEffect(() => { if (page && active) applyMetadata(page, active) }, [page, active])
 
-  // The backend loads checkpoints lazily. A configured Drive-backed runtime is
-  // therefore available for inference even before the first model has loaded.
-  const modelsReady = Boolean(health?.models_loaded || health?.status === 'healthy' || health?.status === 'configured')
+  // Render uses lazy checkpoint loading. Keep configuration and actual model
+  // loading separate so the console never calls a configured runtime "unavailable".
+  const runtimeConfigured = Boolean(health?.runtime_configured || health?.status === 'configured' || health?.status === 'healthy' || health?.models_loaded)
+  const modelsLoaded = Boolean(health?.models_loaded || health?.status === 'healthy')
   const title = page?.label || 'Not found'
 
   const navigate = (event, id) => {
@@ -137,12 +138,12 @@ export default function App() {
       <div className="brand"><div className="brand-mark" aria-hidden="true">V</div><div><b>VISION<span>SHIELD</span></b><small>AI PERCEPTION SYSTEMS</small></div></div>
       <div className="side-label">CONSOLE</div>
       <nav aria-label="Primary navigation">{nav.map(([id, label, symbol]) => <a className={active === id ? 'selected' : ''} href={pages[id].path} key={id} onClick={(event) => navigate(event, id)}><span aria-hidden="true">{symbol}</span>{label}<i aria-hidden="true">›</i></a>)}</nav>
-      <div className="side-footer"><span className={`connection ${modelsReady ? 'ready' : ''}`}><i />{modelsReady ? 'Model runtime available' : 'Model runtime unavailable'}</span><small>Production perception console</small></div>
+      <div className="side-footer"><span className={`connection ${runtimeConfigured ? 'ready' : ''}`}><i />{modelsLoaded ? 'Models loaded' : runtimeConfigured ? 'Model runtime configured' : 'Model runtime unavailable'}</span><small>{runtimeConfigured ? 'Checkpoints load on first inference' : 'Production perception console'}</small></div>
     </aside>
     <main>
       <header><button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(!mobileOpen)}>☰</button><div><span className="breadcrumb">CONSOLE <b>/</b> {title.toUpperCase()}</span><Breadcrumbs page={page} /></div><div className="header-status"><span className={`connection ${health?.api_status === 'connected' ? 'ready' : ''}`}><i />{health?.api_status === 'connected' ? 'API connected' : 'API unavailable'}</span><button className="avatar" aria-label="Refresh system status" onClick={refreshHealth}>VS</button></div></header>
       <div className="content">
-        <div className="runtime-strip"><span><b>RUNTIME</b> {modelsReady ? 'NAFNet + RT-DETR available' : 'Configure model weights to enable inference'}</span><span>{health ? `${health.total_inferences || 0} persisted inference runs` : 'Health unavailable'}</span></div>
+        <div className="runtime-strip"><span><b>RUNTIME</b> {modelsLoaded ? 'NAFNet + RT-DETR loaded' : runtimeConfigured ? 'NAFNet + RT-DETR configured · loads on first inference' : 'Configure model weights to enable inference'}</span><span>{health ? `${health.total_inferences || 0} persisted inference runs` : 'Health unavailable'}</span></div>
         <Suspense fallback={<LoadingPage />}>
           {active === 'workspace' && <Workspace health={health} onRefresh={refreshHealth} />}
           {active === 'video' && <VideoIntelligence />}
