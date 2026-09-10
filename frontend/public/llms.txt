@@ -1,0 +1,30 @@
+# VisionShield AI
+
+VisionShield AI is an all-weather visual perception system. It routes degraded imagery through condition-specific NAFNet restoration and then performs object detection with the project's native RT-DETRv2 runtime.
+
+## Core pages
+
+- `/` — image inference workspace for weather-routed restoration and detection.
+- `/video` — sampled video-frame analysis.
+- `/history` — persisted inference runs and measured runtime metadata.
+- `/benchmarks` — project benchmark measurements.
+
+## Model pipeline
+
+1. Weather condition selection or rule-based routing.
+2. Condition-specific NAFNet image restoration for fog, rain, snow or low-light imagery.
+3. Native RT-DETRv2 object detection.
+4. Measured outputs and persisted artifacts where available.
+
+## Trust and limitations
+
+- The interface does not fabricate detections when the model runtime is unavailable.
+- Video analysis samples independent frames; it does not claim persistent object tracking.
+- Benchmark values shown by the product should be interpreted according to their stated evaluation context.
+
+## Technical stack
+
+- React + Vite frontend.
+- FastAPI backend.
+- NAFNet restoration.
+- Native RT-DETRv2 detection.
