@@ -51,13 +51,16 @@ def read_root():
 
 @app.get("/health", tags=["System"])
 def health_check():
-    configured = bool(drive_weights.status())
+    assets = drive_weights.status()
+    runtime_configured = any(asset["configured"] for asset in assets.values())
     ready = nafnet_service.loaded and rtdetr_service.loaded
     return {
-        "status": "healthy" if ready else ("configured" if configured else "degraded"),
+        "status": "healthy" if ready else ("configured" if runtime_configured else "degraded"),
         "api_status": "connected",
         "models_loaded": ready,
+        "runtime_configured": runtime_configured,
         "model_loading": "lazy",
+        "total_inferences": storage.inference_count(),
     }
 
 
@@ -65,11 +68,15 @@ def health_check():
 def model_health():
     nafnet = nafnet_service.status()
     rt_detr = rtdetr_service.status()
+    assets = drive_weights.status()
     ready = nafnet_service.loaded and rtdetr_service.loaded
+    runtime_configured = any(asset["configured"] for asset in assets.values())
     return {
-        "status": "healthy" if ready else "configured",
+        "status": "healthy" if ready else ("configured" if runtime_configured else "degraded"),
+        "models_loaded": ready,
+        "runtime_configured": runtime_configured,
         "models": {"nafnet": nafnet, "rt_detr": rt_detr},
-        "weight_store": {"provider": "google-drive", "lazy": True, "assets": drive_weights.status()},
+        "weight_store": {"provider": "google-drive", "lazy": True, "assets": assets},
         "artifact_store": {"status": "ready", "provider": "replaceable-local"},
         "total_inferences": storage.inference_count(),
     }
