@@ -1,39 +1,19 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { api } from './api'
-import Workspace from './components/Workspace'
-import VideoIntelligence from './components/VideoIntelligence'
-import History from './components/History'
-import Benchmarks from './components/Benchmarks'
+
+const Workspace = lazy(() => import('./components/Workspace'))
+const VideoIntelligence = lazy(() => import('./components/VideoIntelligence'))
+const History = lazy(() => import('./components/History'))
+const Benchmarks = lazy(() => import('./components/Benchmarks'))
 
 const SITE_NAME = 'VisionShield AI'
-const SITE_DESCRIPTION = 'All-weather visual perception using condition-aware NAFNet restoration and RT-DETRv2 object detection.'
 const SITE_URL = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/$/, '')
 
 const pages = {
-  workspace: {
-    path: '/',
-    title: 'VisionShield AI | All-Weather Visual Perception',
-    description: 'Run all-weather image perception with weather-routed NAFNet restoration and RT-DETRv2 detection.',
-    label: 'Workspace',
-  },
-  video: {
-    path: '/video',
-    title: 'Video Intelligence | VisionShield AI',
-    description: 'Analyze sampled video frames with the VisionShield all-weather restoration and detection pipeline.',
-    label: 'Video intelligence',
-  },
-  history: {
-    path: '/history',
-    title: 'Inference History | VisionShield AI',
-    description: 'Review persisted VisionShield inference runs, measured latency, detections and model routing.',
-    label: 'Inference history',
-  },
-  benchmarks: {
-    path: '/benchmarks',
-    title: 'Benchmarks | VisionShield AI',
-    description: 'Review VisionShield model benchmark measurements and runtime evaluation results.',
-    label: 'Benchmarks',
-  },
+  workspace: { path: '/', title: 'VisionShield AI | All-Weather Visual Perception', description: 'Run all-weather image perception with weather-routed NAFNet restoration and RT-DETRv2 detection.', label: 'Workspace' },
+  video: { path: '/video', title: 'Video Intelligence | VisionShield AI', description: 'Analyze sampled video frames with the VisionShield all-weather restoration and detection pipeline.', label: 'Video intelligence' },
+  history: { path: '/history', title: 'Inference History | VisionShield AI', description: 'Review persisted VisionShield inference runs, measured latency, detections and model routing.', label: 'Inference history' },
+  benchmarks: { path: '/benchmarks', title: 'Benchmarks | VisionShield AI', description: 'Review VisionShield model benchmark measurements and runtime evaluation results.', label: 'Benchmarks' },
 }
 
 const nav = [
@@ -48,17 +28,18 @@ function routeFromPath(pathname) {
   return match?.[0] || null
 }
 
+function upsertMeta(attribute, key, content) {
+  let node = document.querySelector(`meta[${attribute}="${key}"]`)
+  if (!node) { node = document.createElement('meta'); node.setAttribute(attribute, key); document.head.appendChild(node) }
+  node.content = content
+}
+
 function applyMetadata(page, active) {
   document.title = page.title
-  const setMeta = (name, content) => {
-    let node = document.querySelector(`meta[name="${name}"]`)
-    if (!node) { node = document.createElement('meta'); node.name = name; document.head.appendChild(node) }
-    node.content = content
-  }
-  setMeta('description', page.description)
-  setMeta('theme-color', '#f4efe5')
-  setMeta('application-name', SITE_NAME)
-  setMeta('robots', 'index,follow,max-image-preview:large')
+  upsertMeta('name', 'description', page.description)
+  upsertMeta('name', 'theme-color', '#f4efe5')
+  upsertMeta('name', 'application-name', SITE_NAME)
+  upsertMeta('name', 'robots', 'index,follow,max-image-preview:large')
 
   const canonical = `${SITE_URL}${page.path === '/' ? '/' : page.path}`
   let canonicalNode = document.querySelector('link[rel="canonical"]')
@@ -77,19 +58,14 @@ function applyMetadata(page, active) {
     'twitter:description': page.description,
     'twitter:image': `${SITE_URL}/social-card.svg`,
   }
-  Object.entries(social).forEach(([property, content]) => {
-    const attr = property.startsWith('og:') ? 'property' : 'name'
-    let node = document.querySelector(`meta[${attr}="${property}"]`)
-    if (!node) { node = document.createElement('meta'); node.setAttribute(attr, property); document.head.appendChild(node) }
-    node.content = content
-  })
+  Object.entries(social).forEach(([key, content]) => upsertMeta(key.startsWith('og:') ? 'property' : 'name', key, content))
 
   const data = {
     '@context': 'https://schema.org',
     '@graph': [
       { '@type': 'Organization', '@id': `${SITE_URL}/#organization`, name: SITE_NAME, url: SITE_URL },
       { '@type': 'WebApplication', '@id': `${canonical}#application`, name: page.title, url: canonical, description: page.description, applicationCategory: 'ComputerVisionApplication', operatingSystem: 'Web' },
-      { '@type': 'BreadcrumbList', itemListElement: [{ '@type': 'ListItem', position: 1, name: 'VisionShield AI', item: `${SITE_URL}/` }, ...(active !== 'workspace' ? [{ '@type': 'ListItem', position: 2, name: page.label, item: canonical }] : [])] },
+      { '@type': 'BreadcrumbList', itemListElement: [{ '@type': 'ListItem', position: 1, name: SITE_NAME, item: `${SITE_URL}/` }, ...(active !== 'workspace' ? [{ '@type': 'ListItem', position: 2, name: page.label, item: canonical }] : [])] },
     ],
   }
   let jsonLd = document.getElementById('visionshield-structured-data')
@@ -99,18 +75,23 @@ function applyMetadata(page, active) {
 
 function Breadcrumbs({ page }) {
   return <nav className="breadcrumb-nav" aria-label="Breadcrumb">
-    <a href="/" onClick={(e) => { if (window.location.origin === SITE_URL) { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) } }}>VisionShield AI</a>
+    <a href="/" onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/'); window.dispatchEvent(new PopStateEvent('popstate')) }}>VisionShield AI</a>
     {page.path !== '/' && <><span aria-hidden="true">/</span><span aria-current="page">{page.label}</span></>}
   </nav>
 }
 
+function LoadingPage() {
+  return <div className="page"><div className="empty-state" role="status" aria-live="polite"><div className="empty-mark" aria-hidden="true">V</div><strong>Loading workspace</strong><span>Preparing the selected perception module.</span></div></div>
+}
+
 function NotFound() {
   useEffect(() => {
-    const title = 'Page Not Found | VisionShield AI'
-    document.title = title
-    let description = document.querySelector('meta[name="description"]')
-    if (!description) { description = document.createElement('meta'); description.name = 'description'; document.head.appendChild(description) }
-    description.content = 'The requested VisionShield AI page could not be found.'
+    document.title = 'Page Not Found | VisionShield AI'
+    upsertMeta('name', 'description', 'The requested VisionShield AI page could not be found.')
+    upsertMeta('name', 'robots', 'noindex,follow')
+    let canonical = document.querySelector('link[rel="canonical"]')
+    if (!canonical) { canonical = document.createElement('link'); canonical.rel = 'canonical'; document.head.appendChild(canonical) }
+    canonical.href = `${SITE_URL}/`
   }, [])
   return <div className="not-found">
     <span className="eyebrow">404 / ROUTE NOT FOUND</span>
@@ -132,7 +113,6 @@ export default function App() {
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   }, [])
-
   useEffect(() => { refreshHealth() }, [])
 
   const page = active ? pages[active] : null
@@ -143,8 +123,7 @@ export default function App() {
 
   const navigate = (event, id) => {
     event.preventDefault()
-    const next = pages[id]
-    window.history.pushState({}, '', next.path)
+    window.history.pushState({}, '', pages[id].path)
     setActive(id)
     setMobileOpen(false)
   }
@@ -162,10 +141,12 @@ export default function App() {
       <header><button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(!mobileOpen)}>☰</button><div><span className="breadcrumb">CONSOLE <b>/</b> {title.toUpperCase()}</span><Breadcrumbs page={page} /></div><div className="header-status"><span className={`connection ${health?.api_status === 'connected' ? 'ready' : ''}`}><i />{health?.api_status === 'connected' ? 'API connected' : 'API unavailable'}</span><button className="avatar" aria-label="Refresh system status" onClick={refreshHealth}>VS</button></div></header>
       <div className="content">
         <div className="runtime-strip"><span><b>RUNTIME</b> {modelsReady ? 'NAFNet + RT-DETR available' : 'Configure model weights to enable inference'}</span><span>{health ? `${health.total_inferences || 0} persisted inference runs` : 'Health unavailable'}</span></div>
-        {active === 'workspace' && <Workspace health={health} onRefresh={refreshHealth} />}
-        {active === 'video' && <VideoIntelligence />}
-        {active === 'history' && <History />}
-        {active === 'benchmarks' && <Benchmarks />}
+        <Suspense fallback={<LoadingPage />}>
+          {active === 'workspace' && <Workspace health={health} onRefresh={refreshHealth} />}
+          {active === 'video' && <VideoIntelligence />}
+          {active === 'history' && <History />}
+          {active === 'benchmarks' && <Benchmarks />}
+        </Suspense>
         <footer className="site-footer"><span>VisionShield AI · All-weather visual perception</span><nav aria-label="Footer navigation">{nav.map(([id, label]) => <a href={pages[id].path} key={id} onClick={(event) => navigate(event, id)}>{label}</a>)}</nav></footer>
       </div>
     </main>
