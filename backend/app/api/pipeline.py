@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import time
 import uuid
@@ -92,16 +93,20 @@ async def process_image(
         raise HTTPException(status_code=413, detail="Image exceeds the 20 MB upload limit.")
     image = _validate_image(file, contents)
     detected_weather, weather_features = _resolve_weather(image, weather)
-    _require_models(enable_enhancement, detected_weather)
+
+    # Model loading and tensor inference are synchronous and can take minutes on
+    # a cold Render instance. Run them in a worker thread so /health can continue
+    # responding while the first inference warms the lazy runtime.
+    await asyncio.to_thread(_require_models, enable_enhancement, detected_weather)
 
     run_id = f"inf_{uuid.uuid4().hex[:12]}"
     original_artifact = storage.save_artifact(contents, run_id, "original", file.filename, file.content_type)
     pipeline_start = time.perf_counter()
     enhancement_start = time.perf_counter()
-    processed = nafnet_service.enhance_image(image, detected_weather) if enable_enhancement else image.copy()
+    processed = await asyncio.to_thread(nafnet_service.enhance_image, image, detected_weather) if enable_enhancement else image.copy()
     enhancement_ms = round((time.perf_counter() - enhancement_start) * 1000, 2)
     detection_start = time.perf_counter()
-    detections = rtdetr_service.detect(processed, confidence_threshold=confidence)
+    detections = await asyncio.to_thread(rtdetr_service.detect, processed, confidence) 
     detection_ms = round((time.perf_counter() - detection_start) * 1000, 2)
     annotated = _annotate(processed, detections)
     total_ms = round((time.perf_counter() - pipeline_start) * 1000, 2)
@@ -153,17 +158,17 @@ async def run_benchmark(
         raise HTTPException(status_code=413, detail="Benchmark image exceeds the 20 MB upload limit.")
     image = _validate_image(file, contents)
     selected_weather, weather_features = _resolve_weather(image, weather)
-    _require_models(enable_enhancement, selected_weather)
+    await asyncio.to_thread(_require_models, enable_enhancement, selected_weather)
 
     # Warm-up once so the measured runs represent inference rather than checkpoint loading.
-    warmed = nafnet_service.enhance_image(image, selected_weather) if enable_enhancement else image.copy()
-    rtdetr_service.detect(warmed, confidence_threshold=confidence)
+    warmed = await asyncio.to_thread(nafnet_service.enhance_image, image, selected_weather) if enable_enhancement else image.copy()
+    await asyncio.to_thread(rtdetr_service.detect, warmed, confidence)
     timings: list[float] = []
     detection_counts: list[int] = []
     for _ in range(iterations):
         start = time.perf_counter()
-        processed = nafnet_service.enhance_image(image, selected_weather) if enable_enhancement else image.copy()
-        detections = rtdetr_service.detect(processed, confidence_threshold=confidence)
+        processed = await asyncio.to_thread(nafnet_service.enhance_image, image, selected_weather) if enable_enhancement else image.copy()
+        detections = await asyncio.to_thread(rtdetr_service.detect, processed, confidence)
         timings.append((time.perf_counter() - start) * 1000)
         detection_counts.append(len(detections))
 
