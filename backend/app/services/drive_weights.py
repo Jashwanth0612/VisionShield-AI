@@ -9,7 +9,7 @@ from typing import Final
 # Public Google Drive file IDs for the six production checkpoints. The files are
 # intentionally kept outside GitHub because the combined size is ~1.94 GB.
 DEFAULT_DRIVE_IDS: Final[dict[str, str]] = {
-    "NAFNET_FOG_25p15.pth": "1lLlOSoLw0bs7v6hjhu-CZhZ3Fe9EVTB-",
+    "NAFNet_FOG_25p15.pth": "1lLlOSoLw0bs7v6hjhu-CZhZ3Fe9EVTB-",
     "NAFNet_LOL_best.pth": "1QRf2-pyk4NTnNjQf_waVT0qWoZv5yVpK",
     "NAFNet_OTS_best.pth": "19o_HoeqhEJQH36A-OK8yDOT2l5rqFN90",
     "NAFNet_RAIN_best.pth": "1buwK7-BilGUz5tKAVGAcYUs-XqyhFz18",
