@@ -190,22 +190,29 @@ class NAFNetService:
         self.load_errors.pop(weather, None)
         try:
             path = self._checkpoint_path(weather)
-            checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
-            if isinstance(checkpoint, nn.Module):
-                model = checkpoint
-            else:
-                state = (
-                    checkpoint.get("params")
-                    or checkpoint.get("state_dict")
-                    or checkpoint.get("model")
-                    if isinstance(checkpoint, dict)
-                    else checkpoint
-                )
-                if not isinstance(state, dict):
-                    raise ValueError("Checkpoint does not contain a PyTorch state_dict.")
-                model = self._build_model()
-                state = {key.replace("module.", "", 1): value for key, value in state.items()}
-                model.load_state_dict(state, strict=True)
+            # Memory-map the CPU checkpoint so the serialized weight file does
+            # not have to be fully materialized as a second in-memory copy.
+            checkpoint = torch.load(
+                str(path),
+                map_location="cpu",
+                weights_only=True,
+                mmap=True,
+            )
+            state = (
+                checkpoint.get("params")
+                or checkpoint.get("state_dict")
+                or checkpoint.get("model")
+                if isinstance(checkpoint, dict)
+                else checkpoint
+            )
+            if not isinstance(state, dict):
+                raise ValueError("Checkpoint does not contain a PyTorch state_dict.")
+            model = self._build_model()
+            state = {key.replace("module.", "", 1): value for key, value in state.items()}
+            model.load_state_dict(state, strict=True)
+            del state
+            del checkpoint
+            gc.collect()
             self._release_other_models(weather)
             self.models[weather] = model.to(self.device).eval()
         except Exception as exc:
