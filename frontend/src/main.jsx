@@ -5,6 +5,7 @@ import './styles.css'
 import './weather.css'
 import './artifacts.css'
 import './premium.css'
+import './site.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
