@@ -43,3 +43,5 @@ services:
           name: visionshield-api
           type: web
           envVarKey: RENDER_EXTERNAL_URL
+      - key: VITE_SITE_URL
+        value: https://visionshield-frontend.onrender.com
