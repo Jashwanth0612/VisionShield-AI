@@ -101,7 +101,7 @@ def _select_weather(image: Image.Image, weather: str) -> tuple[str, dict[str, fl
     return weather, None
 
 
-def _model_status(selected_weather: str | None = None) -> dict[str, Any]:
+def _model_status() -> dict[str, Any]:
     nafnet = {
         "loaded": bool(NAFNET_SERVICES),
         "configured": bool(NAFNET_SERVICES),
@@ -159,7 +159,7 @@ def process_image(
     enhanced_artifact = storage.save_artifact(enhanced_buffer.getvalue(), run_id, "enhanced", "enhanced.png", "image/png")
     annotated_artifact = storage.save_artifact(annotated_buffer.getvalue(), run_id, "annotated", "annotated.png", "image/png")
 
-    models = _model_status(selected_weather)
+    models = _model_status()
     timestamp = storage.now()
     record = {
         "run_id": run_id,
@@ -218,7 +218,6 @@ def process_image(
     }
 
 
-@gr.api(api_name="health")
 def health() -> dict[str, Any]:
     """Return runtime and model availability without allocating GPU time."""
     models = _model_status()
@@ -234,13 +233,11 @@ def health() -> dict[str, Any]:
     }
 
 
-@gr.api(api_name="history")
 def history(search: str = "", media_type: str = "all", limit: int = 50) -> list[dict[str, Any]]:
     """Return stored inference history."""
     return storage.list_inferences(search=search, media_type=media_type, limit=limit)
 
 
-@gr.api(api_name="history_item")
 def history_item(run_id: str) -> dict[str, Any]:
     """Return one stored inference history item."""
     item = storage.get_inference(run_id)
@@ -256,6 +253,11 @@ with gr.Blocks(title="VisionShield AI Runtime") as demo:
         "The production React client uses the named Gradio API endpoints below."
     )
     gr.Markdown("**API:** `/gradio_api` · **Runtime:** ZeroGPU · **Models:** NAFNet × 5 + RT-DETRv2")
+
+    gr.api(process_image, api_name="process_image", api_description="Run the full VisionShield image perception pipeline.")
+    gr.api(health, api_name="health", api_description="Return runtime and model availability.")
+    gr.api(history, api_name="history", api_description="Return stored inference history.")
+    gr.api(history_item, api_name="history_item", api_description="Return one stored inference history item.")
 
 if __name__ == "__main__":
     demo.launch()
