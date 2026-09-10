@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 import sys
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,7 @@ class NativeRTDETR:
             class ProductionDecoder(RTDETRTransformerv2):
                 """Exact AQM/SOS behavior used by the trained checkpoint."""
 
-                def __init__(self, *args: Any, use_adaptive_query_masking: bool = True,
+                def __init__(self, *args: Any, use_adaptive_query_masking: bool = False,
                              use_small_object_scoring: bool = True, **kwargs: Any) -> None:
                     super().__init__(*args, **kwargs)
                     self.use_adaptive_query_masking = use_adaptive_query_masking
@@ -135,14 +136,12 @@ class NativeRTDETR:
                         output_memory, enc_outputs_logits, enc_outputs_coord_unact, self.num_queries
                     )
 
-                    # Keep the tensor shape at 300 queries while masking the
-                    # scene-adaptively unused queries. This is the exact AQM
-                    # strategy used during training of the production model.
-                    mask = torch.zeros(enc_topk_logits.shape[:2], device=enc_topk_logits.device)
-                    mask[:, :adaptive_queries] = 1.0
-                    enc_topk_memory = enc_topk_memory * mask.unsqueeze(-1)
-                    enc_topk_logits = enc_topk_logits * mask.unsqueeze(-1)
-                    enc_topk_bbox_unact = enc_topk_bbox_unact * mask.unsqueeze(-1)
+                    if self.use_adaptive_query_masking:
+                        mask = torch.zeros(enc_topk_logits.shape[:2], device=enc_topk_logits.device)
+                        mask[:, :adaptive_queries] = 1.0
+                        enc_topk_memory = enc_topk_memory * mask.unsqueeze(-1)
+                        enc_topk_logits = enc_topk_logits * mask.unsqueeze(-1)
+                        enc_topk_bbox_unact = enc_topk_bbox_unact * mask.unsqueeze(-1)
 
                     if self.training:
                         enc_topk_bboxes_list.append(torch.sigmoid(enc_topk_bbox_unact))
@@ -181,13 +180,13 @@ class NativeRTDETR:
                 dim_feedforward=1024,
                 dropout=0.0,
                 enc_act="gelu",
-                expansion=1.0,
+                expansion=0.5,
                 depth_mult=1.0,
                 act="silu",
                 eval_spatial_size=[640, 640],
             )
             decoder = ProductionDecoder(
-                num_classes=4,
+                num_classes=8,
                 feat_channels=[256, 256, 256],
                 feat_strides=[8, 16, 32],
                 hidden_dim=256,
@@ -200,12 +199,19 @@ class NativeRTDETR:
                 eval_spatial_size=[640, 640],
                 eval_idx=2,
                 num_points=[4, 4, 4],
-                use_adaptive_query_masking=True,
+                use_adaptive_query_masking=False,
                 use_small_object_scoring=True,
             )
             model = RTDETR(backbone=backbone, encoder=encoder, decoder=decoder)
 
-            checkpoint = torch.load(self.checkpoint, map_location="cpu")
+            # Memory-map the detector checkpoint so the serialized file is not
+            # duplicated wholesale in RAM before state_dict loading.
+            checkpoint = torch.load(
+                self.checkpoint,
+                map_location="cpu",
+                weights_only=True,
+                mmap=True,
+            )
             state = checkpoint["model"] if isinstance(checkpoint, dict) and "model" in checkpoint else checkpoint
             state = {
                 key: value for key, value in state.items()
@@ -218,6 +224,9 @@ class NativeRTDETR:
                     "RT-DETR checkpoint architecture mismatch: "
                     f"missing={critical_missing[:8]}, unexpected={unexpected[:8]}"
                 )
+            del state
+            del checkpoint
+            gc.collect()
 
             model.to(self.device)
             model.eval()
@@ -265,17 +274,19 @@ class NativeRTDETR:
                 ],
                 "confidence": round(float(score), 4),
                 "class_id": int(label),
-                "label": CLASS_NAMES.get(int(label), str(int(label))),
+                "label": CLASS_NAMES.get(int(label), f"Class {int(label)}"),
             })
         return detections
 
     def status(self) -> dict[str, Any]:
+        native_status = self.model.status() if self.model is not None else None
         return {
             "loaded": self.loaded,
             "checkpoint": self.checkpoint.name,
             "checkpoint_exists": self.checkpoint.is_file(),
             "device": str(self.device),
-            "aqm": True,
+            "aqm": False,
             "sos": True,
             "error": self.load_error,
+            "native": native_status,
         }
