@@ -118,7 +118,9 @@ export default function App() {
   const page = active ? pages[active] : null
   useEffect(() => { if (page && active) applyMetadata(page, active) }, [page, active])
 
-  const modelsReady = health?.status === 'operational'
+  // The backend loads checkpoints lazily. A configured Drive-backed runtime is
+  // therefore available for inference even before the first model has loaded.
+  const modelsReady = Boolean(health?.models_loaded || health?.status === 'healthy' || health?.status === 'configured')
   const title = page?.label || 'Not found'
 
   const navigate = (event, id) => {
@@ -135,7 +137,7 @@ export default function App() {
       <div className="brand"><div className="brand-mark" aria-hidden="true">V</div><div><b>VISION<span>SHIELD</span></b><small>AI PERCEPTION SYSTEMS</small></div></div>
       <div className="side-label">CONSOLE</div>
       <nav aria-label="Primary navigation">{nav.map(([id, label, symbol]) => <a className={active === id ? 'selected' : ''} href={pages[id].path} key={id} onClick={(event) => navigate(event, id)}><span aria-hidden="true">{symbol}</span>{label}<i aria-hidden="true">›</i></a>)}</nav>
-      <div className="side-footer"><span className={`connection ${modelsReady ? 'ready' : ''}`}><i />{modelsReady ? 'Models ready' : 'Model runtime unavailable'}</span><small>Production perception console</small></div>
+      <div className="side-footer"><span className={`connection ${modelsReady ? 'ready' : ''}`}><i />{modelsReady ? 'Model runtime available' : 'Model runtime unavailable'}</span><small>Production perception console</small></div>
     </aside>
     <main>
       <header><button className="mobile-menu" aria-label="Open navigation" onClick={() => setMobileOpen(!mobileOpen)}>☰</button><div><span className="breadcrumb">CONSOLE <b>/</b> {title.toUpperCase()}</span><Breadcrumbs page={page} /></div><div className="header-status"><span className={`connection ${health?.api_status === 'connected' ? 'ready' : ''}`}><i />{health?.api_status === 'connected' ? 'API connected' : 'API unavailable'}</span><button className="avatar" aria-label="Refresh system status" onClick={refreshHealth}>VS</button></div></header>
