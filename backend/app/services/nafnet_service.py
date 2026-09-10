@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gc
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from PIL import Image
 import torchvision.transforms as transforms
 
 from app.core.config import settings
+from app.services.drive_weights import DriveWeightError, drive_weights
 
 
 class LayerNormFunction(torch.autograd.Function):
@@ -98,7 +100,6 @@ class NAFNet(nn.Module):
             self.encoders.append(nn.Sequential(*[NAFBlock(chan) for _ in range(num)]))
             self.downs.append(nn.Conv2d(chan, chan * 2, 2, 2))
             chan *= 2
-
         self.middle_blks = nn.Sequential(*[NAFBlock(chan) for _ in range(middle_blk_num)])
         self.ups = nn.ModuleList()
         self.decoders = nn.ModuleList()
@@ -139,9 +140,17 @@ WEATHER_LABELS = {
     "low_light": "Low-Light",
 }
 
+WEATHER_FILES = {
+    "fog_its": "NAFNet_FOG_25p15.pth",
+    "fog_ots": "NAFNet_OTS_best.pth",
+    "rain": "NAFNet_RAIN_best.pth",
+    "snow": "NAFNet_SNOW_best.pth",
+    "low_light": "NAFNet_LOL_best.pth",
+}
+
 
 class NAFNetService:
-    """Condition-specific NAFNet inference with lazy checkpoint loading."""
+    """Condition-specific NAFNet inference with lazy local/Drive checkpoint loading."""
 
     def __init__(self, device: str | None = None):
         self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
@@ -158,27 +167,46 @@ class NAFNetService:
             dec_blk_nums=settings.decoder_blocks,
         )
 
+    def _checkpoint_path(self, weather: str) -> Path:
+        configured = self.model_paths.get(weather)
+        if configured and configured.is_file():
+            return configured
+        filename = WEATHER_FILES.get(weather)
+        if not filename:
+            raise DriveWeightError(f"Unsupported NAFNet weather route: {weather}")
+        return drive_weights.ensure(filename)
+
+    def _release_other_models(self, keep: str) -> None:
+        for weather in list(self.models):
+            if weather != keep:
+                del self.models[weather]
+        gc.collect()
+        if self.device.type == "cuda":
+            torch.cuda.empty_cache()
+
     def _load_checkpoint(self, weather: str) -> None:
-        if weather in self.models or weather in self.load_errors:
+        if weather in self.models:
             return
-        path = self.model_paths.get(weather)
-        if path is None:
-            self.load_errors[weather] = f"No NAFNet checkpoint configured for {WEATHER_LABELS.get(weather, weather)}."
-            return
-        if not path.is_file():
-            self.load_errors[weather] = f"NAFNet checkpoint was not found: {path}"
-            return
+        self.load_errors.pop(weather, None)
         try:
+            path = self._checkpoint_path(weather)
             checkpoint = torch.load(str(path), map_location="cpu", weights_only=False)
             if isinstance(checkpoint, nn.Module):
                 model = checkpoint
             else:
-                state = checkpoint.get("params") or checkpoint.get("state_dict") or checkpoint.get("model") if isinstance(checkpoint, dict) else checkpoint
+                state = (
+                    checkpoint.get("params")
+                    or checkpoint.get("state_dict")
+                    or checkpoint.get("model")
+                    if isinstance(checkpoint, dict)
+                    else checkpoint
+                )
                 if not isinstance(state, dict):
                     raise ValueError("Checkpoint does not contain a PyTorch state_dict.")
                 model = self._build_model()
                 state = {key.replace("module.", "", 1): value for key, value in state.items()}
                 model.load_state_dict(state, strict=True)
+            self._release_other_models(weather)
             self.models[weather] = model.to(self.device).eval()
         except Exception as exc:
             self.load_errors[weather] = f"Unable to load checkpoint: {exc}"
@@ -205,7 +233,10 @@ class NAFNetService:
         working = image.convert("RGB")
         if max(working.size) > 1024:
             scale = 1024 / max(working.size)
-            working = working.resize((max(1, round(working.width * scale)), max(1, round(working.height * scale))), Image.Resampling.LANCZOS)
+            working = working.resize(
+                (max(1, round(working.width * scale)), max(1, round(working.height * scale))),
+                Image.Resampling.LANCZOS,
+            )
 
         tensor = self.transform(working).unsqueeze(0).to(self.device)
         output = model(tensor)
@@ -219,18 +250,22 @@ class NAFNetService:
 
     def status(self) -> dict[str, Any]:
         conditions = {}
-        for weather, path in self.model_paths.items():
+        for weather in WEATHER_LABELS:
+            path = self.model_paths.get(weather)
+            drive_filename = WEATHER_FILES[weather]
+            local_drive_path = drive_weights.local_path(drive_filename)
             conditions[weather] = {
-                "label": WEATHER_LABELS.get(weather, weather),
-                "configured": bool(path),
-                "checkpoint": path.name if path else None,
-                "checkpoint_exists": bool(path and path.is_file()),
+                "label": WEATHER_LABELS[weather],
+                "configured": bool(path and path.is_file()) or drive_weights.is_configured(drive_filename),
+                "checkpoint": path.name if path else drive_filename,
+                "checkpoint_exists": bool(path and path.is_file()) or local_drive_path.is_file(),
                 "loaded": weather in self.models,
+                "source": "local" if path and path.is_file() else "google-drive",
                 "error": self.load_errors.get(weather),
             }
         return {
             "loaded": self.loaded,
-            "configured": bool(self.model_paths),
+            "configured": any(item["configured"] for item in conditions.values()),
             "device": str(self.device),
             "conditions": conditions,
             "error": self.load_error,
