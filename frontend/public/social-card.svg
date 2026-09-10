@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">VisionShield AI — All-Weather Visual Perception</title>
+  <desc id="desc">Weather-routed NAFNet restoration followed by RT-DETRv2 object detection.</desc>
+  <rect width="1200" height="630" fill="#f4efe5"/>
+  <rect x="72" y="72" width="486" height="486" rx="34" fill="#173e5f"/>
+  <path d="M178 178h274v54H242v54h172v54H242v54h210v54H178z" fill="#f4efe5"/>
+  <text x="620" y="184" fill="#667789" font-family="Arial, sans-serif" font-size="24" letter-spacing="5">ALL-WEATHER PERCEPTION</text>
+  <text x="620" y="270" fill="#102a43" font-family="Arial, sans-serif" font-size="66" font-weight="700">VisionShield AI</text>
+  <text x="620" y="326" fill="#29425a" font-family="Arial, sans-serif" font-size="28">Restore. Detect. Explain.</text>
+  <line x1="620" y1="376" x2="1090" y2="376" stroke="#cfc5b4" stroke-width="2"/>
+  <text x="620" y="428" fill="#53697b" font-family="Arial, sans-serif" font-size="22">NAFNet restoration  →  RT-DETRv2 detection</text>
+  <text x="620" y="470" fill="#8a968f" font-family="Arial, sans-serif" font-size="18">Weather-aware visual intelligence for degraded imagery</text>
+</svg>
