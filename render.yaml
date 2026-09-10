@@ -7,8 +7,8 @@ services:
     plan: free
     healthCheckPath: /health
     envVars:
-      # Leave model paths empty until the real checkpoints are available.
-      # The backend intentionally reports the models as unavailable rather than fabricating inference results.
+      # Model checkpoints are fetched lazily from the public Google Drive store.
+      # The backend keeps them off GitHub because the combined size is ~1.94 GB.
       - key: NAFNET_ITS_WEIGHTS_PATH
         value: ""
       - key: NAFNET_OTS_WEIGHTS_PATH
@@ -35,7 +35,7 @@ services:
     name: visionshield-frontend
     runtime: static
     rootDir: frontend
-    buildCommand: npm ci && npm run build
+    buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
